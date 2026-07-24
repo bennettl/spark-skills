@@ -1,0 +1,27 @@
+# Build output (both spark repos commit dist/; this registry never should)
+dist/
+build/
+*.tsbuildinfo
+
+# Secrets — never commit (spark-api has a history of committed .env + GCP keys)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# GCP service-account keys (e.g. sparkdev-*.json)
+*-service-account*.json
+service-account*.json
+gcp-*.json
+
+# Dependencies / tooling
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+
+# Editor / OS
+.DS_Store
+*.log
+.idea/
+.vscode/
