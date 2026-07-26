@@ -43,7 +43,10 @@ def extract_frontmatter(text, path):
     """Return {'name':..., 'description':...} from top-level frontmatter keys.
     Handles same-line scalars, quotes, and folded/literal block scalars
     (>-, >, |, |-). Nested (indented) keys are ignored, so `metadata:` maps
-    don't interfere."""
+    don't interfere. Supported value forms are the same-line scalar and the
+    block scalar; plain multi-line scalars and inline `# comments` are not
+    parsed (they don't occur in the sanctioned scaffold)."""
+    text = text.lstrip("﻿")  # tolerate a UTF-8 BOM before the opening fence
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
         fail(f"{path}: missing opening '---' frontmatter fence")
@@ -114,7 +117,16 @@ def check_skill(name):
     elif len(desc) > 1024:
         fail(f"{rel}: description >1024 chars ({len(desc)})")
 
-    n_lines = len(text.splitlines())
+    # Line budget applies to the body only (exclude the frontmatter block), so
+    # the numbers mean what conventions.md says.
+    all_lines = text.lstrip("﻿").splitlines()
+    body_start = 0
+    if all_lines and all_lines[0].strip() == "---":
+        for k in range(1, len(all_lines)):
+            if all_lines[k].strip() == "---":
+                body_start = k + 1
+                break
+    n_lines = len(all_lines) - body_start
     if n_lines >= LINE_FAIL:
         fail(f"{rel}: body {n_lines} lines (>= {LINE_FAIL} hard limit)")
     elif n_lines >= LINE_WARN:

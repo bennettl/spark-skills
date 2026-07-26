@@ -54,6 +54,25 @@ def main(argv):
                 os.symlink(target, link)
             print(f"{action} {link} -> {target}")
 
+    # Prune stale links from renamed/removed skills — but ONLY links that point
+    # into THIS repo's .agents/skills, so other registries' global links are
+    # left untouched. Covers dangling links too (realpath resolves the target
+    # path even when it no longer exists).
+    repo_agents_real = os.path.realpath(AGENTS_SKILLS)
+    for gdir in GLOBAL_DIRS:
+        if not os.path.isdir(gdir):
+            continue
+        for entry in sorted(os.listdir(gdir)):
+            if entry in skills:
+                continue
+            p = os.path.join(gdir, entry)
+            if not os.path.islink(p):
+                continue
+            if os.path.dirname(os.path.realpath(p)) == repo_agents_real:
+                if not dry:
+                    os.remove(p)
+                print(f"{'would prune' if dry else 'pruned'} {p} (stale — skill removed/renamed)")
+
     print(f"\n{'(dry run) ' if dry else ''}installed {len(skills)} skill(s) into "
           f"{len(GLOBAL_DIRS)} global dir(s).")
     return 0
