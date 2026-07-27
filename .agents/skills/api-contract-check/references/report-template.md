@@ -8,7 +8,7 @@ Emit exactly this shape so results are scannable and diffable across runs.
 
 **Repos:** spark-api @ `<path>` · spark-web @ `<path>`
 **Endpoint(s):** `<METHOD /path>` → FE module `src/api/<module>.ts`
-**Global wrappers seen:** `<TransformInterceptor / ClassSerializerInterceptor / none>`
+**Envelope (this route):** `<{ data: T } via ResponseInterceptor | bare T (no interceptor)>` · **Serializer:** `none (entities serialize as-is)`
 
 ### Findings
 

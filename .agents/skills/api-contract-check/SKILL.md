@@ -54,17 +54,27 @@ seconds; missed drift ships a bug.
      match silently fails and you wrongly report "no endpoint found." Capture the
      method signature, request DTO(s) from `@Body` / `@Query` / `@Param`, and the
      declared response type / serialized entity.
-   - **Global wrappers — read once per run.** Open `main.ts` plus any global
-     interceptors and exception filters. A `TransformInterceptor` (`{ data, meta }`
-     envelope), a `ClassSerializerInterceptor` (`@Exclude` / `@Expose` — an entity
-     field that exists but is **not** serialized), and the error-response shape all
-     change the top-level contract invisibly at the controller. Miss these and the
-     diff returns false "aligned."
+   - **Wrappers — resolve for the *specific* route.** Open `main.ts` and the
+     controller's interceptors. spark-api's envelope is a **per-controller**
+     `ResponseInterceptor` (`libs/interceptors/`) applied via
+     `@UseInterceptors(ResponseInterceptor)` — **not global** (~55 of ~62
+     controllers). It wraps the payload as **`{ data: T }`** with **no top-level
+     `meta`**. A route whose controller *lacks* the decorator returns a **bare**
+     payload, so its FE type must be `T`, not `{ data: T }` — check the actual
+     controller, don't assume every route is enveloped. There is **no
+     `ClassSerializerInterceptor`** and no `@Exclude` / `@Expose` anywhere:
+     entities serialize as-is, so every column is on the wire unless the service
+     omits it in code (a leaked sensitive field is a finding, not an omission). The
+     error body (custom `exceptionFactory` + `HttpExceptionsFilter`) is
+     `{ statusCode, error, message }`. Miss these and the diff returns false
+     "aligned."
 
 2. **Normalize each side** into a field list: name, type, optional?, nullable?,
    enum values, nested shape. **Capture the top-level response shape too** —
-   envelope wrapping, `T` vs `T[]` vs `{ data, total, page }` pagination, and
-   `@Exclude`d fields — not just leaf fields.
+   envelope wrapping (`{ data: T }`), `T` vs `T[]` vs **nestjs-paginate**
+   `{ data: T[], meta, links }` (which nests *inside* the envelope ⇒ the wire is
+   `{ data: { data: T[], meta, links } }`, read on the FE as `res.data.data.data`),
+   and unserialized fields — not just leaf fields.
 
 3. **Diff field-by-field** using `references/type-mapping.md`.
 
