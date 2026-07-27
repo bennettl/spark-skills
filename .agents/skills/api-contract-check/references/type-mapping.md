@@ -32,25 +32,37 @@ Confirm whether a naming strategy or a serializer transforms casing on the way
 out. If the wire is snake_case and the FE type is camelCase (or vice versa),
 every field is a mismatch — flag the transform, not each field.
 
-## Response envelope & pagination (read `main.ts` / global interceptors)
+## Response envelope & pagination (read `main.ts` + the controller's interceptors)
 
-- **`TransformInterceptor`** wrapping every response as `{ data: T, meta?: {...} }`
-  — the FE type must be `{ data: T }`, not `T`. A per-field diff that ignores the
-  envelope reports false "aligned."
-- **`ClassSerializerInterceptor`** honoring `@Exclude()` / `@Expose()` — an entity
-  field that exists in the DB but is `@Exclude`d is **not** on the wire; the FE
-  type must not include it.
-- **Collections:** `T` vs `T[]` vs `{ data: T[], total, page, pageSize }`. Match
-  the exact pagination wrapper the endpoint returns.
-- **Error shape:** the global exception filter defines the error body; FE error
-  handling types should match it.
+- **`ResponseInterceptor`** (`libs/interceptors/`, spark-api) wraps the payload as
+  **`{ data: T }`** — **no top-level `meta`**. It is applied **per-controller** via
+  `@UseInterceptors(ResponseInterceptor)`, **not globally** (~55 of ~62
+  controllers). For an enveloped route the FE type must be `{ data: T }`, not `T`;
+  for a route whose controller *lacks* the decorator the payload is **bare** (`T`).
+  Resolve this per route — a per-field diff that ignores the envelope reports false
+  "aligned."
+- **No `ClassSerializerInterceptor`** and no `@Exclude()` / `@Expose()` exist in
+  spark-api — entities serialize **as-is**. Every entity column is on the wire
+  unless the service omits it in code, so the FE type should include those fields;
+  a sensitive column that leaks to the wire is a finding, not an omission.
+- **Collections — nestjs-paginate:** a paginated list is
+  `{ data: T[], meta: { itemsPerPage, totalItems, currentPage, totalPages, sortBy, filter }, links: { current } }`,
+  itself nested inside the `{ data }` envelope ⇒ the wire is
+  `{ data: { data: T[], meta, links } }` (the FE reads `res.data.data.data`).
+  Request-side filtering/paging uses **query params** `filter.<field>`, operators
+  like `$in:a,b`, `limit`, and `sortBy` — not `page` / `pageSize` fields.
+- **Error shape:** spark-api's custom `exceptionFactory` + `HttpExceptionsFilter`
+  produce `{ statusCode, error, message }` (validation errors comma-joined into
+  `message`); the FE `ApiError` is `{ error, message }`.
 
 ## Route matching
 
 - Compose `app.setGlobalPrefix('...')` and any `@Version` / URI versioning with
   the `@Controller('...')` + `@Get('...')` paths before comparing to the FE
   `Endpoint` string. A prefix mismatch reads as "endpoint not found" — check the
-  prefix before concluding the route is missing.
+  prefix before concluding the route is missing. (spark-api currently sets
+  **neither** a global prefix nor URI versioning — but verify, since that can
+  change silently.)
 
 ## Request-side coercion
 
