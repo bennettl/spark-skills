@@ -106,3 +106,9 @@ modules. Colors come from **`src/theme.ts`** (named scales `DarkPurple`,
 - **No committed secrets or `.env`** — any added secret is a **blocker** (never
   print its value). The repo already has a git-tracked `.env` problem; don't add
   another.
+- **Removing a tracked secret is the right fix but rarely complete.** Untracking
+  or deleting a committed `.env`/key stops *future* tracking, but the value
+  remains in git history and live until rotated (and `.env.example` should hold
+  only empty placeholders). Treat a secret-removal diff as a **merge** with a
+  **low follow-up** (rotate + purge history); don't block the cleanup PR, and
+  don't mistake removal for a completed fix.

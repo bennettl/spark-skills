@@ -114,9 +114,15 @@ bug into a repo with no other safety net.
 - **`synchronize: true` = the entity is the live schema.** No migrations. Treat
   every entity/column edit as a schema mutation on next deploy and weigh
   data-loss before anything else.
-- **Flag any added secret.** A new key, token, `.env` value, or service-account
-  JSON in the diff is a **blocker** — both repos already carry a committed-secret
-  problem; do not add a third. Never print the secret's value.
+- **Flag any added secret; credit a removed one.** A new key, token, `.env`
+  value, or service-account JSON in the diff is a **blocker** — both repos
+  already carry a committed-secret problem; do not add a third. Never print the
+  secret's value. Conversely, a diff that *untracks or deletes* a committed
+  secret is the prescribed remediation, **not** a finding — but it's rarely
+  complete: the value stays in git history and stays live until rotated. Clear
+  the merge and record a **low follow-up** (rotate the credential + purge
+  history); do not block the cleanup PR, and do not mistake removal for a
+  finished fix.
 - **Never hardcode model IDs or context windows** in findings or examples — no
   `claude-*`/`gpt-*` literals, no "N-token window" assumptions. See
   `meta/model-currency.md`.

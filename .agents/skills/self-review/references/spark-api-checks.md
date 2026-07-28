@@ -107,3 +107,9 @@ against spark-web.
 - **No committed secrets** — no keys, tokens, `.env`, service-account JSON. Any
   added secret is a **blocker** (and never print its value). The repo already
   has a committed GCP service-account key problem; don't add another.
+- **Removing a tracked secret is the right fix but rarely complete.** Untracking
+  or deleting a committed key/`.env` stops *future* tracking, but the value
+  remains in git history and live until rotated. Treat a secret-removal diff as a
+  **merge** (it's the prescribed remediation, not a new leak) with a **low
+  follow-up**: rotate the credential and purge history separately. Don't block
+  the cleanup PR; don't mistake the removal for a completed fix.

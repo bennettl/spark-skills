@@ -67,8 +67,10 @@ or any unresolved high ⇒ **do-not-merge**.
 - **medium** — type-unsafe or inconsistent but tolerated today. Uncoerced
   numeric query param; missing `handleMutationError`; ad-hoc hex instead of
   `theme.ts`; leftover `console.log`.
-- **low** — cosmetic, no behavioral impact. Naming/ordering nits, comment drift.
-  Report at most briefly; never block on a low.
+- **low** — cosmetic, or a residual-risk follow-up that adds no new harm in this
+  diff. Naming/ordering nits, comment drift; or a correct-but-incomplete
+  remediation (e.g. a secret untracked here but still live in git history →
+  rotate + purge as a follow-up). Report briefly; never block on a low.
 
 When a finding sits between two levels, pick the higher and say why. A blocker or
 unresolved high always forces do-not-merge; mediums and lows are the author's
