@@ -64,16 +64,48 @@ following is *documented* (Claude). Full reasoning:
 
 | Skill | Status | What it does |
 |-------|--------|--------------|
-| [`api-contract-check`](.agents/skills/api-contract-check/SKILL.md) | ✅ built | Catches FE↔BE type drift between spark-api DTOs/entities and spark-web's hand-written API types + zod. Encodes the stack's traps: trust class-validator DTOs / serialized entities over TS-inferred types (`strictNullChecks: false`), `synchronize: true` ⇒ entity = live schema, response-envelope & pagination detection, request-side query/param string-coercion. |
+| [`api-contract-check`](.agents/skills/api-contract-check/SKILL.md) | ✅ built | Catches FE↔BE type drift between spark-api DTOs/entities and spark-web's hand-written API types. Encodes the stack's traps: trust class-validator DTOs / serialized entities over TS-inferred types (`strictNullChecks: false`), `synchronize: true` ⇒ entity = live schema, response-envelope & pagination detection, request-side query/param string-coercion. |
+| [`self-review`](.agents/skills/self-review/SKILL.md) | ✅ built | The pre-PR gate — the only one, since neither repo has CI or hooks. Reviews the branch diff in whichever repo it runs in against that repo's `AGENTS.md` "Code Review Rules" plus the stack's traps; hands contract questions to `api-contract-check`. Emits file:line findings with severity and a merge / do-not-merge verdict. Reviews; does not rewrite. |
+| [`diagnose`](.agents/skills/diagnose/SKILL.md) | ✅ built | Root-causes a bug from a symptom — screenshot, error, failing request, or prose report. Classifies it against the stack's silent-failure modes (envelope depth, drift with no runtime validation, opt-in `ResponseInterceptor`, per-route guards, `synchronize: true`, `numeric`/`timestamptz` serialization), localizes the code, then **confirms or refutes each hypothesis by reading it**. Emits a root cause with file:line evidence, an explicit confidence label, and a ranked fix plan. Diagnoses and plans; does not patch. |
 
 ### Roadmap
 
-Foundation, built next (one PR each): `self-review` (pre-PR gate — the only gate,
-since there's no CI), `domain-audit` (detect a business rule re-derived across N
-surfaces), `git-commit`, `nestjs-module` + `api-hook` scaffolding, and a meta
-`audit` (with the model-currency check). Also planned: per-repo `CLAUDE.md` /
-`AGENTS.md` authored *into* spark-api and spark-web — the standards the review
-skills check against.
+Built next, one PR each, in this order:
+
+1. **`preflight`** — the mechanical sweep `self-review` is bad at: run `pnpm build`
+   (spark-web has no standalone typecheck script — `tsc -b` only runs there) and
+   `pnpm lint`, plus a diff grep for conflict markers, `console.log`, `debugger`,
+   and dangling references after a rename. Deterministic, so it belongs in
+   `scripts/`; becomes a `self-review` prerequisite.
+2. **`open-pr`** — absorbs the planned `git-commit`. Encodes the conventional-commit
+   style, the PR body shape, paired cross-repo PR linking, and always-PR-never-main;
+   runs `self-review` as its gate.
+3. **`authz-audit`** — the security skill worth having, scoped to what the generic
+   one can't know: route-guard coverage (there is **no global `APP_GUARD`** — new
+   routes are public unless guarded) and entity-column leakage (there is **no
+   serializer** — a returned entity ships every column). Must suppress the two
+   already-known committed-credential issues rather than re-raise them.
+4. **`issue-refine`** — ticket → scoped plan, grounded in the code and `docs/`.
+   Deliberately **transport-agnostic** (pasted text, URL, or MCP if present) so it
+   doesn't depend on a tracker integration; no Linear MCP is connected today.
+5. **`dual-repo-review`** — a thin orchestrator over `self-review` ×2 +
+   `api-contract-check` + merge ordering. Mostly composition, not new logic.
+6. **`smoke-test`** — a diff-derived manual checklist first: spark-web has **no test
+   framework at all**, and the grading/SQS paths need AWS creds to run. Browser
+   automation only if a driver is added later.
+7. **`skills-audit`** — the meta skill. Live model ground truth per
+   [`meta/model-currency.md`](meta/model-currency.md) (never a baked-in roster),
+   plus description/trigger-overlap detection and a check that skill checklists
+   still reference symbols that exist in the app repos (`handleMutationError`,
+   `ResponseInterceptor`, `QueryKey` — these break silently on rename).
+
+Also still planned: `domain-audit` (a business rule re-derived across N surfaces)
+and `nestjs-module` + `api-hook` scaffolding.
+
+**Architecture note:** several of these legitimately claim "run before a PR", and
+both tools trigger on `description` matching. Keep `self-review` as the **hub** that
+delegates to spokes (it already does this for `api-contract-check`) rather than
+shipping five peer skills that compete for the same trigger.
 
 Deferred until the substrate exists (CI, a ticket system, notifications): the whole
 autonomous pipeline (worktree sessions, auto-reviewer, respond-to-review,
