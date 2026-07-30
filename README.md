@@ -64,16 +64,17 @@ following is *documented* (Claude). Full reasoning:
 
 | Skill | Status | What it does |
 |-------|--------|--------------|
-| [`api-contract-check`](.agents/skills/api-contract-check/SKILL.md) | ✅ built | Catches FE↔BE type drift between spark-api DTOs/entities and spark-web's hand-written API types + zod. Encodes the stack's traps: trust class-validator DTOs / serialized entities over TS-inferred types (`strictNullChecks: false`), `synchronize: true` ⇒ entity = live schema, response-envelope & pagination detection, request-side query/param string-coercion. |
+| [`api-contract-check`](.agents/skills/api-contract-check/SKILL.md) | ✅ built | Catches FE↔BE type drift between spark-api DTOs/entities and spark-web's hand-written API types. Encodes the stack's traps: trust class-validator DTOs / serialized entities over TS-inferred types (`strictNullChecks: false`), `synchronize: true` ⇒ entity = live schema, response-envelope & pagination detection, request-side query/param string-coercion. |
+| [`self-review`](.agents/skills/self-review/SKILL.md) | ✅ built | The pre-PR gate — the only one, since neither repo has CI or hooks. Reviews the branch diff in whichever repo it runs in against that repo's `AGENTS.md` "Code Review Rules" plus the stack's traps; hands contract questions to `api-contract-check`. Emits file:line findings with severity and a merge / do-not-merge verdict. Reviews; does not rewrite. |
+| [`diagnose`](.agents/skills/diagnose/SKILL.md) | ✅ built | Root-causes a bug from a symptom — screenshot, error, failing request, or prose report. Classifies it against the stack's silent-failure modes (envelope depth, drift with no runtime validation, opt-in `ResponseInterceptor`, per-route guards, `synchronize: true`, `numeric`/`timestamptz` serialization), localizes the code, then **confirms or refutes each hypothesis by reading it**. Emits a root cause with file:line evidence, an explicit confidence label, and a ranked fix plan. Diagnoses and plans; does not patch. |
 
 ### Roadmap
 
-Foundation, built next (one PR each): `self-review` (pre-PR gate — the only gate,
-since there's no CI), `domain-audit` (detect a business rule re-derived across N
-surfaces), `git-commit`, `nestjs-module` + `api-hook` scaffolding, and a meta
-`audit` (with the model-currency check). Also planned: per-repo `CLAUDE.md` /
-`AGENTS.md` authored *into* spark-api and spark-web — the standards the review
-skills check against.
+Foundation, built next (one PR each): `domain-audit` (detect a business rule
+re-derived across N surfaces), `git-commit`, `nestjs-module` + `api-hook`
+scaffolding, and a meta `audit` (with the model-currency check). Also planned:
+per-repo `CLAUDE.md` / `AGENTS.md` authored *into* spark-api and spark-web — the
+standards the review skills check against.
 
 Deferred until the substrate exists (CI, a ticket system, notifications): the whole
 autonomous pipeline (worktree sessions, auto-reviewer, respond-to-review,
