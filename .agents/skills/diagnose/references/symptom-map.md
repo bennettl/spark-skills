@@ -1,7 +1,17 @@
 # Symptom map
 
-Symptom classes → candidate causes, **ranked by how often this stack produces
-them**. Each candidate: what to check, and what rules it out.
+Symptom classes → candidate causes, each with what to check and what rules it out.
+
+**Provenance of the ranking — read this before trusting the order.** Every
+candidate below is derived from a trap documented in one of the two repos'
+`AGENTS.md`, and every file path and symbol named here was verified to exist. But
+the *ordering within each class* was reasoned from those docs, **not** measured
+against a corpus of real bugs. Classes **A** (blank/undefined) and **B** (stale)
+rest on failure modes the repos' own docs call out as common — "the single biggest
+source of bugs" and "a common mistake" respectively — so their ordering is on
+firmer ground. **D through I** are real failure modes with speculative frequency:
+treat their order as a starting point, not a prior. When a diagnosis lands outside
+the predicted order, that's signal — correct this file.
 
 Ground truth this map is built on (from both repos' `AGENTS.md` — read those too;
 where they differ, they win):
@@ -148,9 +158,11 @@ consumers registered in `app.module.ts`.
    run. *Check:* environment before assuming a code bug.
 2. **Wrong grading strategy for the submission type** — a strategy pattern in
    `src/grading/strategy/` (digital-submission, discussion-forum,
-   handwritten-paper, oral-examination). *Check:* which strategy the submission
-   resolves to.
-3. **Credit reservation blocked it** — see `docs/credit-reservation.md`.
+   handwritten-paper, oral-examination, over a `base-grading.strategy.ts`).
+   *Check:* `grading-strategy.factory.ts` — the factory is where the submission
+   resolves to a strategy, so read the selection logic there before the strategy
+   implementations.
+3. **Credit reservation blocked it** — see `docs/credit-reservation-system.md`.
    *Check:* whether a reservation failed before the work was enqueued.
 4. **Consumer threw and the message was retried/dropped** — *Check:* Sentry and the
    consumer's error handling.

@@ -63,6 +63,11 @@ Endpoint path (from Endpoint map or the network capture)
        ├─ entity/<name>.entity.ts             TypeORM entity = the LIVE schema
        └─ consumer/ strategy/ guard/ gateway/ event/   (larger modules)
 
+src/config/config.service.ts                   TypeORM setup: synchronize,
+                                               SnakeNamingStrategy
+src/main.ts                                    global ValidationPipe (no transform,
+                                               no whitelist — see symptom class F)
+
 libs/  (aliases)
   @app/auth           Cognito + LTI via one Passport JWT strategy (branches on iss);
                       AuthenticationGuard, AuthorizationGuard, ApiKeyAuthGuard
@@ -77,8 +82,13 @@ Notes:
   what the *service* returns, then read the entity for every column that ships.
 - **The DTO is the request contract**, not the TS type — strictness is off.
 - `app.module.ts` registers the SQS consumers; start there for async symptoms.
-- Design docs in `docs/` are worth reading for domain bugs:
-  grading-pipeline, credit-reservation, regrade-request, LMS integrations.
+- **`src/config/config.service.ts`** holds the TypeORM setup — `synchronize` and
+  `SnakeNamingStrategy` both live there. Read it when a symptom smells like schema
+  or casing rather than assuming from an entity alone.
+- Design docs in `docs/` are worth reading for domain bugs — note the filenames are
+  longer than the topic: `grading-pipeline.md`, `credit-reservation-system.md`,
+  `regrade-request-system.md`, plus per-integration Canvas/Brightspace notes and
+  `duplicate-account-troubleshooting.md`.
 
 ## Async / SQS paths
 
