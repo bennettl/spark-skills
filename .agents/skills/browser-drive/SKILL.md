@@ -215,8 +215,11 @@ after ~10s.
 ## Rules for this stack
 
 - **Never reseed or mutate the database.** `~/pi-smoke` holds calibrated
-  fixtures the smoke harness asserts on (rollup must stay `submissionCount 5`,
-  `attachedCount 4`, `attachRate 0.8`).
+  fixtures the smoke harness asserts on. Do not quote its expected values here:
+  the harness currently hardcodes `attachRate 0.8`, which assumed a
+  fixtures-only DB and is **stale** — with real submissions present the correct
+  answer is 0.83, tracked in SUP2-26. Read the expected values from the harness,
+  and never bend application code to match them.
 - **Never restart the API or kill the Vite dev server.**
 - Reading and screenshotting is always safe. If you must submit something, use
   the **ZZ Edge Cases** assignment
