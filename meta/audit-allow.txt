@@ -1,0 +1,16 @@
+# Paths a skill cites on purpose that do not exist in the app repos.
+#
+# `scripts/audit.py` verifies that every app-repo path a skill names actually
+# exists — a dead path reads as verified, which is worse than silence. Some
+# citations are legitimately absent: a path on an unmerged branch used as a
+# worked example, or a naming-divergence illustration.
+#
+# Format: one path per line, then `#` and the reason. Entries must be reviewed,
+# not accumulated — an allow entry is a promise that the absence is intentional.
+# When the referencing text is rewritten, delete the entry.
+
+src/process-insight/            # naming-divergence example (BE singular vs FE plural); lands with spark-api#85
+src/process-insight/enum.ts     # same pair, same PR
+src/api/process-insights.ts     # the FE half of that example; lands with spark-web#73
+scripts/setup-queue.sh          # introduced by spark-api#85; cited precisely BECAUSE it is not yet on main
+docs/credit-reservation.md      # skills-audit cites this AS the dead-path defect it caught; must stay dead
