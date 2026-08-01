@@ -81,9 +81,16 @@ export function readSession(email) {
 }
 
 export function writeSession(email, tokens) {
-  mkdirSync(CONFIG_DIR, { recursive: true });
+  // Create restricted, don't widen-then-narrow. Without an explicit mode the
+  // file lands at 0644 under the usual umask and only becomes 0600 on the next
+  // line — a window where a live access AND refresh token are world-readable.
+  // The chmod stays because `mode` is only honoured when the file is created,
+  // so it is what re-restricts an already-existing session file.
+  mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
   const p = sessionPath(email);
-  writeFileSync(p, JSON.stringify({ email, ...tokens, savedAt: new Date().toISOString() }, null, 2));
+  writeFileSync(p, JSON.stringify({ email, ...tokens, savedAt: new Date().toISOString() }, null, 2), {
+    mode: 0o600,
+  });
   chmodSync(p, 0o600);
   return p;
 }
