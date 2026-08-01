@@ -26,7 +26,16 @@ State it explicitly anyway, because there are real exceptions:
 ## 2. What does the backend deploy mutate?
 
 `synchronize: true`, no migrations — **every entity edit is a live schema change on
-the next deploy.** Enumerate the entity files in the diff and classify each:
+the next deploy.**
+
+**Ownership:** whether a given entity edit is *safe* is `self-review`'s call — its
+`spark-api-checks.md` §2 owns the destructive-change trap, the backfill question,
+and the severity mapping. Take that verdict as given; don't re-litigate it. What
+this skill adds is the **ordering and blast-radius consequence across two deploys**:
+which changes must land before the frontend, and what production looks like in
+between. The table below is a sequencing aid for that judgment, not a second
+severity rubric — if it ever disagrees with `spark-api-checks.md` §2, that file
+wins and this one is the bug.
 
 | Change | Risk | Notes |
 |---|---|---|
