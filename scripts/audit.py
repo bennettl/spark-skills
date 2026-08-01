@@ -21,8 +21,26 @@ Exits non-zero on hard failures only; warnings never fail the build.
 The live model-currency check is deliberately NOT here — `meta/model-currency.md`
 requires querying a live model source at run time, which is the `skills-audit`
 skill's job, not a stdlib script's. This covers the static half.
+
+KNOWN LIMITATIONS (false negatives — a clean run is not proof of correctness):
+
+  * Only **backticked** tokens are inspected. A path or skill name written in
+    plain prose is invisible to every check here.
+  * Path checks only fire for tokens starting with PATH_ROOTS. A bare filename
+    (`app.module.ts`, `theme.ts`, `const.ts`) is NOT verified, and skills use
+    those often.
+  * A path is "found" if it exists in *either* app repo — a spark-web path that
+    only exists in spark-api still passes.
+  * Prose assertions about behavior ("the pipe has no transform", "no global
+    APP_GUARD") cannot be checked mechanically. That's step 5 of the skill.
+  * Ownership counts are **line hits**, not file counts, and the deferral test is
+    a keyword window — it can be fooled either way.
+
+These are the reason `skills-audit` has a judgment half. Treat this script as the
+floor, not the ceiling.
 """
 
+import difflib
 import os
 import re
 import sys
@@ -52,6 +70,8 @@ REGISTRY_ROOTS = ("meta/", "scripts/")
 PLACEHOLDER = re.compile(r"[<>*{}]|\.\.\.|…|\bN\b|:line")
 BACKTICKED = re.compile(r"`([^`\n]+)`")
 LINE_SUFFIX = re.compile(r":\d+(-\d+)?$")
+# Shaped like a skill name: kebab-case, lowercase, no dots/slashes/spaces.
+SKILL_SHAPE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)+$")
 
 # Counts that are true on the day they're written and rot on the next merge.
 EXPIRING = [
@@ -148,20 +168,35 @@ def check_skill_crossrefs(name, skill_dir, all_skills):
     neither built nor planned is a real error: that's a typo or a stale rename."""
     for path in md_files(skill_dir):
         text = read(path)
-        seen_planned = set()
+        lines = text.splitlines()
+        seen = set()
         for m in BACKTICKED.finditer(text):
             tok = m.group(1).strip()
-            if tok == name or tok not in KNOWN_SKILL_NAMES:
-                continue
-            if tok in all_skills:
+            if tok == name or tok in all_skills:
                 continue
             line = text[: m.start()].count("\n") + 1
             if tok in PLANNED_SKILLS:
-                if tok not in seen_planned:
-                    seen_planned.add(tok)
+                if tok not in seen:
+                    seen.add(tok)
                     note(f"{rel(path)}:{line}: references planned skill '{tok}' (not built yet)")
-            else:
-                fail(f"{rel(path)}:{line}: references skill '{tok}' which is neither built nor planned")
+                continue
+            # Unknown token. Only consider ones shaped like a skill name — the
+            # registry is full of kebab-case tokens that are libraries, not skills.
+            if not SKILL_SHAPE.match(tok) or tok in seen:
+                continue
+            close = difflib.get_close_matches(tok, sorted(KNOWN_SKILL_NAMES), n=1, cutoff=0.8)
+            if close:
+                seen.add(tok)
+                fail(
+                    f"{rel(path)}:{line}: references skill '{tok}' which does not exist "
+                    f"— did you mean '{close[0]}'? (typo or stale rename)"
+                )
+            elif "skill" in lines[line - 1].lower():
+                seen.add(tok)
+                warn(
+                    f"{rel(path)}:{line}: '{tok}' is described as a skill but is neither "
+                    f"built nor in the planned set — stale reference, or add it to PLANNED_SKILLS"
+                )
 
 
 def candidate_paths(text):
@@ -252,7 +287,9 @@ def check_ownership(skills):
                 holders[name] = (hits, defers)
         if len(holders) > OWNERSHIP_THRESHOLD:
             undeclared = [n for n, (_, d) in holders.items() if not d]
-            detail = ", ".join(f"{n}({c})" for n, (c, _) in sorted(holders.items()))
+            # Counts are line hits, not files — label them so nobody reads them
+            # as "N files" and draws the wrong conclusion about spread.
+            detail = ", ".join(f"{n}({c} lines)" for n, (c, _) in sorted(holders.items()))
             if len(undeclared) > OWNERSHIP_THRESHOLD:
                 warn(
                     f"ownership: '{label}' independently stated in {len(holders)} skills "

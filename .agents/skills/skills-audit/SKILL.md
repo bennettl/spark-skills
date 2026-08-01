@@ -67,6 +67,13 @@ This is the periodic sweep.
    Read the output as a **worklist, not a verdict.** An expiring-count warning
    means *re-verify*, not *wrong* — go count, and most of the time it still holds.
 
+   **A clean run is not proof of correctness.** The script's known false-negative
+   surface is documented in its docstring and is wide: it only inspects
+   *backticked* tokens, only checks paths beginning with a known root (so bare
+   filenames like `app.module.ts` are unverified), accepts a path found in
+   *either* repo, and cannot evaluate prose claims at all. Steps 2–5 exist
+   precisely because step 1 cannot see those.
+
 2. **Verify model currency against a live source.** This is the half a script must
    not fake. Per `meta/model-currency.md`, do **not** compare against a hardcoded
    roster — that list is the thing that goes stale, and it has already burned this
