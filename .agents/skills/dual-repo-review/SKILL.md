@@ -66,9 +66,16 @@ retrospective; say so and scope to what's still actionable.
    - Do they cover the same scope, or does one implement more than the other
      exposes?
 
-2. **Delegate the per-repo review.** Run **`self-review`** inside each checkout
-   against that repo's diff. Do not re-derive its checks here. Collect its findings
-   and carry the severities forward into the aggregate verdict.
+2. **Delegate the per-repo review.** Run **`self-review`** once per repo, **passing
+   the repo root explicitly** (`../spark-api`, then `../spark-web`). This matters:
+   `self-review` detects the repo from files at the root of its target, so a call
+   that names no root falls back to the working directory — and when that's a third
+   directory like this registry, detection returns **"neither"** and it silently
+   degrades to stack-neutral checks. Confirm in its output that it identified the
+   intended repo before trusting its findings; if it reports "neither," the
+   delegation failed and the per-repo half of this review is missing. Do not
+   re-derive its checks here — collect its findings and carry the severities into
+   the aggregate verdict.
 
 3. **Delegate the REST seam.** Run **`api-contract-check`** for each endpoint the
    pair touches. It owns field-by-field shape, envelope, pagination, casing, and

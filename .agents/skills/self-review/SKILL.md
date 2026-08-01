@@ -2,9 +2,10 @@
 name: self-review
 description: >-
   Pre-PR self-review gate for the Supaclass app repos (spark-api, spark-web).
-  Run it before opening a pull request on a branch — it is the ONLY automated
+  Run it before opening a pull request — it is the ONLY automated
   gate, since neither repo has CI or git hooks. It reviews the working diff
-  against main in whichever repo it runs in, auto-detects the repo, and loads
+  against main in whichever repo it runs in (or a repo root the caller
+  names), auto-detects the repo, and loads
   that repo's AGENTS.md "Code Review Rules" plus the stack's non-obvious traps.
   spark-api: class-validator DTO classes, synchronize:true schema-change risk,
   ResponseInterceptor on new controllers, leaked entity fields / secrets /
@@ -43,8 +44,13 @@ bug into a repo with no other safety net.
   `git status`) so uncommitted working-tree edits are included — you are gating
   what will land, not just what's committed. If the branch isn't off `main`,
   say which base you used.
-- **The repo.** Auto-detect which repo you're in (see Method 2) and load its
-  rule set. The `references/*-checks.md` files in this skill are the **source of
+- **The repo.** Default to auto-detecting which repo you're in (see Method 2) and
+  load its rule set. **Accept an explicit repo root if the caller names one** —
+  e.g. `../spark-api` — and detect against *that* root rather than the working
+  directory, matching `api-contract-check`'s input contract. This is what lets an
+  orchestrator (`dual-repo-review`) invoke this skill per repo without changing
+  the session's working directory; without it, a call from a third directory
+  detects "neither" and degrades to stack-neutral checks only. The `references/*-checks.md` files in this skill are the **source of
   truth** for the checklists; the repo's `AGENTS.md` "Code Review Rules" +
   "Non-obvious rules" are the confirmatory, possibly-newer overlay. Read
   `AGENTS.md` when present and let it override; **degrade gracefully** when it's
@@ -58,7 +64,9 @@ bug into a repo with no other safety net.
    the changed file list + hunks (committed and uncommitted). Group by area
    (controller, entity, dto, api module, component, …) so checks map cleanly.
 
-2. **Detect the repo** from files at the root, not from the directory name:
+2. **Detect the repo** from files at the root of the target — the explicit repo
+   root if the caller named one, otherwise the working directory — not from the
+   directory name:
    - **spark-api** — `nest-cli.json`, `@nestjs/core` in `package.json`, and the
      `src/<feature>/{controller,service,entity,dto}` module layout.
    - **spark-web** — `vite.config.ts` + `src/api/const.ts`, `react` + `@mantine/*`
