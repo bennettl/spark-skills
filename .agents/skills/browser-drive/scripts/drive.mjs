@@ -30,7 +30,27 @@ const flag = (name, fallback = undefined) => {
   return i === -1 ? fallback : argv[i + 1];
 };
 const has = (name) => argv.includes(`--${name}`);
-const positional = argv.slice(1).filter((a, i, arr) => !a.startsWith("--") && !String(arr[i - 1] ?? "").startsWith("--"));
+
+// Flags that consume the NEXT argv entry. Everything else is a boolean, and
+// the arg after it is a positional. Filtering on "the previous entry started
+// with --" instead treated the arg after a boolean flag as that flag's value:
+// `text --headed /assignments` yielded NO positionals, so url fell back to "/"
+// and the driver silently reported the wrong page — the exact failure this
+// tool exists to prevent.
+const VALUE_FLAGS = new Set(["who", "from", "url", "port"]);
+const positional = (() => {
+  const rest = argv.slice(1);
+  const out = [];
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i];
+    if (!a.startsWith("--")) {
+      out.push(a);
+      continue;
+    }
+    if (VALUE_FLAGS.has(a.slice(2))) i++; // skip the value it consumes
+  }
+  return out;
+})();
 
 const opts = { headless: !has("headed"), port: Number(flag("port", 9222)) };
 
