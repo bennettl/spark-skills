@@ -125,6 +125,11 @@ export default async function (b) {
 API: `goto` `click` `clickText` `setFiles` `type` `waitFor` `waitForText` `eval`
 `text` `url` `screenshot` `settle` `drain`.
 
+Also available, and used by the "bug or fixture?" recipe below: `on(event, fn)`
+subscribes to a raw CDP event and returns an unsubscribe function, and
+`send(method, params)` issues a raw CDP command — together they let a recipe
+read response bodies (`Network.getResponseBody`) rather than guess from the DOM.
+
 **Submitting a form inside a modal** — the shape every upload/attach flow in this
 app needs:
 
