@@ -76,7 +76,8 @@ try {
         );
       }
       const info = await importSession({ ...tokens, who: flag("who") });
-      console.log(`Imported session for ${info.email}${info.name ? ` (${info.name}` : ""}${info.type ? `, ${info.type})` : info.name ? ")" : ""}`);
+      const who = [info.name, info.type].filter(Boolean).join(", ");
+      console.log(`Imported session for ${info.email}${who ? ` (${who})` : ""}`);
       console.log(`Cached at ${info.path} (mode 600)`);
       console.log(
         info.refreshToken
