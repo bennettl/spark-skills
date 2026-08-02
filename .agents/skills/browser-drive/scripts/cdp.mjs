@@ -1,7 +1,13 @@
 // Minimal Chrome DevTools Protocol driver. Zero dependencies: Node 22 ships
 // global fetch and WebSocket, so this needs nothing added to any repo.
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -20,8 +26,24 @@ const CHROME = CHROME_CANDIDATES.find((p) => existsSync(p));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export class Browser {
-  constructor({ port = 9222, headless = true, profileDir = null } = {}) {
-    this.port = port;
+  constructor({ port = 0, headless = true, profileDir = null } = {}) {
+    // A fixed debug port cannot be made safe here. launch() always spawns a new
+    // Chrome; if that port is already bound, Chrome comes up *portless* while the
+    // port keeps answering from the instance that got there first — so we would
+    // silently drive someone else's browser, and close() sends Browser.close,
+    // which terminates it entirely. Chrome only writes DevToolsActivePort (our
+    // one proof of ownership) when the requested port is ephemeral, so there is
+    // no fixed-port variant that can verify what it attached to. Verified by
+    // execution: port 0 writes the file, port 9333 does not.
+    if (port) {
+      throw new Error(
+        `browser-drive spawns its own Chrome and must use an ephemeral debug port ` +
+          `(got port ${port}). A fixed port can attach to a browser we did not ` +
+          `launch — including your real one, which close() would shut down.`
+      );
+    }
+    // Resolved from DevToolsActivePort during launch().
+    this.port = 0;
     this.headless = headless;
     this.profileDir = profileDir ?? mkdtempSync(join(tmpdir(), "cdp-profile-"));
     this.ownsProfile = profileDir === null;
@@ -32,7 +54,8 @@ export class Browser {
 
   async launch() {
     const args = [
-      `--remote-debugging-port=${this.port}`,
+      // Ephemeral. The real port is read back from DevToolsActivePort below.
+      "--remote-debugging-port=0",
       `--user-data-dir=${this.profileDir}`,
       "--no-first-run",
       "--no-default-browser-check",
@@ -49,12 +72,43 @@ export class Browser {
         `No Chrome found. Tried:\n  ${CHROME_CANDIDATES.join("\n  ")}\n` +
           `Set CHROME_PATH to your binary.`
       );
+    // A stale file from an earlier run in a reused profile would point us at a
+    // browser that is not ours.
+    const portFile = join(this.profileDir, "DevToolsActivePort");
+    rmSync(portFile, { force: true });
+
     this.proc = spawn(CHROME, args, { stdio: "ignore", detached: false });
 
-    // Wait for the debugging endpoint to come up.
+    // Learn OUR port from OUR profile directory instead of trusting whoever
+    // answers on a well-known one. Chrome writes DevToolsActivePort into the
+    // user-data-dir once the endpoint is listening: line 1 is the port, line 2
+    // the browser websocket path. Because each Browser gets its own mkdtemp
+    // profile, the presence of this file is proof the endpoint belongs to the
+    // process we just spawned.
     const deadline = Date.now() + 20000;
-    let wsUrl = null;
     while (Date.now() < deadline) {
+      if (this.proc.exitCode !== null)
+        throw new Error(
+          `Chrome exited (code ${this.proc.exitCode}) before the debug endpoint came up`
+        );
+      if (existsSync(portFile)) {
+        const first = readFileSync(portFile, "utf8").split("\n")[0].trim();
+        if (first) {
+          this.port = Number(first);
+          break;
+        }
+      }
+      await sleep(100);
+    }
+    if (!this.port)
+      throw new Error(
+        "Chrome never reported a debug port (no DevToolsActivePort written to the profile)"
+      );
+
+    // Endpoint is ours; confirm it actually speaks CDP before driving it.
+    let wsUrl = null;
+    const vdl = Date.now() + 10000;
+    while (Date.now() < vdl) {
       try {
         const r = await fetch(`http://127.0.0.1:${this.port}/json/version`);
         const j = await r.json();
