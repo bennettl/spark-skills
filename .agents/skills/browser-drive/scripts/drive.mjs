@@ -32,7 +32,23 @@ const flag = (name, fallback = undefined) => {
 const has = (name) => argv.includes(`--${name}`);
 const positional = argv.slice(1).filter((a, i, arr) => !a.startsWith("--") && !String(arr[i - 1] ?? "").startsWith("--"));
 
-const opts = { headless: !has("headed"), port: Number(flag("port", 9222)) };
+// No --port option. Chrome launches on an ephemeral port and the real one is
+// read back from DevToolsActivePort in our own profile dir, which is what proves
+// the browser we drive is the one we spawned. A fixed port cannot prove that.
+//
+// Reject the flag rather than ignoring it: someone passing --port believes they
+// are controlling which browser gets driven, and silently doing something else
+// is the same class of failure this change exists to remove.
+if (has("port")) {
+  console.error(
+    "--port is no longer supported. browser-drive spawns its own Chrome on an\n" +
+      "ephemeral port and reads the real one back from DevToolsActivePort, which is\n" +
+      "what guarantees it drives the browser it launched rather than yours."
+  );
+  process.exit(2);
+}
+
+const opts = { headless: !has("headed") };
 
 const reportEvents = (b) => {
   const bad = b.drain().filter((e) => e.kind !== "console" || /error/i.test(e.level));
