@@ -12,10 +12,10 @@ import {
   constants,
   existsSync,
   fstatSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
@@ -135,7 +135,10 @@ export function readSession(email) {
 
 export function writeSession(email, tokens) {
   mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
-  if (typeof process.getuid === "function" && statSync(CONFIG_DIR).uid !== process.getuid())
+  const configStat = lstatSync(CONFIG_DIR);
+  if (configStat.isSymbolicLink() || !configStat.isDirectory())
+    throw new Error(`Refusing to store a session in a non-directory or symlink: ${CONFIG_DIR}`);
+  if (typeof process.getuid === "function" && configStat.uid !== process.getuid())
     throw new Error(`Refusing to store a session in ${CONFIG_DIR}: directory is owned by another user`);
   chmodSync(CONFIG_DIR, 0o700);
   const p = sessionPath(email);
