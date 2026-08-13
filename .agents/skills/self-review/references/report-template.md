@@ -9,7 +9,7 @@ merge verdict when the actual review boundary or required context is unknown.
 ## Self-review — <repo> @ `<branch>`
 
 **Repo:** `<spark-api | spark-web | neither>` (detected via `<signal>`)
-**Actual base:** `<ref>` @ `<base sha>` · **Merge base:** `<sha>` · **Head:** `<sha>`
+**Actual base:** `<ref>` @ `<base sha>` (`<caller-supplied | PR metadata | author-declared>`) · **Merge base:** `<sha>` · **Head:** `<sha>`
 **Files changed:** `<n>`
 **Rules:** `references/<repo>-checks.md` + `AGENTS.md` `<loaded | absent — reference checklist only>`
 

@@ -36,12 +36,17 @@ cross-repository failure modes checked here.
 ## Inputs
 
 - **The branch diff and actual base.** Review only the changed files, not the
-  whole repo. Prefer the caller-supplied pull-request base ref/SHA; otherwise
-  resolve it from PR metadata when available. Compute the merge base between
-  that base and `HEAD`, then inspect the three-dot committed diff plus `git
-  status` and relevant uncommitted hunks. Never silently substitute `main` for
-  an unknown base: if the actual base cannot be established, return an
+  whole repo. Establish the review base in this order: a caller-supplied base
+  ref/SHA; the open PR's base from metadata; or — for a pre-PR run with
+  neither — the branch's intended base (its tracked upstream, else `main`),
+  reported explicitly as an **author-declared base**. Never silently
+  substitute `main` when the branch shows stacking evidence (history built on
+  another feature branch, or the author names a different predecessor): there,
+  and whenever no base can be established at all, return an
   **incomplete / human-review required** result instead of a merge verdict.
+  Compute the merge base between the established base and `HEAD`, then inspect
+  the three-dot committed diff plus `git status` and relevant uncommitted
+  hunks.
 - **The repo.** Auto-detect which repo you're in (see Method 2) and load its
   rule set. The `references/*-checks.md` files in this skill are the **source of
   truth** for the checklists; the repo's `AGENTS.md` "Code Review Rules" +
@@ -65,8 +70,9 @@ cross-repository failure modes checked here.
    - **spark-web** — `vite.config.ts` + `src/api/const.ts`, `react` + `@mantine/*`
      in `package.json`.
    - **neither** — no match. Run only the stack-neutral checks (added secrets,
-     leftover `console.log`/debug, obvious footguns), state that repo-specific
-     rules were unavailable, and keep the verdict scoped to what you could check.
+     sensitive or behavior-changing debug output, obvious footguns), state that
+     repo-specific rules were unavailable, and keep the verdict scoped to what
+     you could check.
 
 3. **Load the rule set.** Open this skill's matching `references/<repo>-checks.md`
    and, if present, the repo's `AGENTS.md`. Reconcile: reference checklist as the
