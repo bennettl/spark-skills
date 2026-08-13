@@ -197,13 +197,15 @@ def check_skill_crossrefs(name, skill_dir, all_skills):
                 continue
             line = text[: m.start()].count("\n") + 1
             token_line = lines[line - 1]
-            direct_context = re.search(
-                r"\bdelegat(?:e|es|ed|ion)\b|\bhandoff\b|\bhand off\b",
+            direct_callees = re.findall(
+                r"(?:delegat(?:e|es|ed|ing|ion)|handoff|hand off)\s+"
+                r"(?:directly\s+)?(?:to\s+)?`([^`]+)`",
                 token_line,
                 re.I,
             )
-            explicit_context = direct_context or re.search(r"\bskill\b", token_line, re.I)
-            if not explicit_context and re.match(r"\s*[-*+]\s+", token_line):
+            direct_context = tok in {callee.strip() for callee in direct_callees}
+            explicit_context = direct_context or bool(re.search(r"\bskill\b", token_line, re.I))
+            if not direct_context and re.match(r"\s*[-*+]\s+", token_line):
                 previous = line - 2
                 if previous >= 0 and not lines[previous].strip():
                     previous -= 1
@@ -213,8 +215,9 @@ def check_skill_crossrefs(name, skill_dir, all_skills):
                         lines[previous],
                         re.I,
                     )
-                    direct_context = direct_context or list_context
-                    explicit_context = explicit_context or list_context
+                    bullet_callees = [value.strip() for value in BACKTICKED.findall(token_line)]
+                    direct_context = bool(list_context and bullet_callees and bullet_callees[0] == tok)
+                    explicit_context = explicit_context or direct_context
             if tok in PLANNED_SKILLS:
                 if tok not in seen:
                     seen.add(tok)
@@ -229,6 +232,12 @@ def check_skill_crossrefs(name, skill_dir, all_skills):
             # Unknown token. Only consider ones shaped like a skill name — the
             # registry is full of kebab-case tokens that are libraries, not skills.
             if not SKILL_SHAPE.match(tok) or tok in seen:
+                continue
+            if direct_context:
+                seen.add(tok)
+                fail(
+                    f"{rel(path)}:{line}: directly delegates to missing skill '{tok}'"
+                )
                 continue
             if not explicit_context:
                 continue
