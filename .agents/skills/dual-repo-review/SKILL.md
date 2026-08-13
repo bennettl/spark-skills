@@ -55,7 +55,9 @@ retrospective; say so and scope to what's still actionable.
   equals the captured head SHA; otherwise create an isolated worktree at that
   SHA. Never label evidence with one boundary while delegates read another.
 - **The in-flight caveat.** If a PR is still being actively worked, say so and
-  frame findings as advisory — do not issue a merge verdict on a moving target.
+  frame findings as advisory. Return **incomplete / human-review required** until
+  a stable boundary can be reviewed; never issue merge clearance on a moving
+  target.
 
 ## Method
 
