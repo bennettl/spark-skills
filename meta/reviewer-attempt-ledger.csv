@@ -1,0 +1,1 @@
+attempt_id,repository,pr_url,cohort,eligible,exclusion_reason,evaluation_version,policy_version,reviewed_base_ref,reviewed_base_sha,merge_base_sha,reviewed_head_sha,review_commit_id,automatic_trigger,ready_at,triggered_at,started_at,completed_at,outcome,risk_flags,sibling_or_stack,stale,escaped_defect,evidence

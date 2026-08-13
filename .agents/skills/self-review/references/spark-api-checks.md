@@ -103,10 +103,12 @@ against spark-web.
 
 ## 7. Hygiene — medium/blocker
 
-- **No leftover `console.log`** / debug statements in committed code — medium.
-- **No committed secrets** — no keys, tokens, `.env`, service-account JSON. Any
-  added secret is a **blocker** (and never print its value). The repo already
-  has a committed GCP service-account key problem; don't add another.
+- **No sensitive or behavior-changing `console.log` / debug statements** in
+  committed code — medium or higher according to impact.
+- **No committed secrets** — no private keys, server tokens, credentials, or
+  service-account JSON. Any added secret is a **blocker** (and never print its
+  value). The obsolete service-account key was removed from the current tree
+  but remains in history; never restore it.
 - **Removing a tracked secret is the right fix but rarely complete.** Untracking
   or deleting a committed key/`.env` stops *future* tracking, but the value
   remains in git history and live until rotated. Treat a secret-removal diff as a

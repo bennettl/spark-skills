@@ -102,13 +102,10 @@ modules. Colors come from **`src/theme.ts`** (named scales `DarkPurple`,
 
 ## 8. Hygiene — medium/blocker
 
-- **No leftover `console.log`** / debug statements — medium.
-- **No committed secrets or `.env`** — any added secret is a **blocker** (never
-  print its value). The repo already has a git-tracked `.env` problem; don't add
-  another.
-- **Removing a tracked secret is the right fix but rarely complete.** Untracking
-  or deleting a committed `.env`/key stops *future* tracking, but the value
-  remains in git history and live until rotated (and `.env.example` should hold
-  only empty placeholders). Treat a secret-removal diff as a **merge** with a
-  **low follow-up** (rotate + purge history); don't block the cleanup PR, and
-  don't mistake removal for a completed fix.
+- **No sensitive or behavior-changing `console.log` / debug statements** —
+  medium or higher according to impact.
+- **No server credentials or non-public environment values.** This repo
+  deliberately tracks `.env` values that are intended to be public in the
+  browser bundle. Review an added value for intended public exposure rather than
+  flagging the filename alone. A private key, server token, or other non-public
+  value is a **blocker**; never print it.

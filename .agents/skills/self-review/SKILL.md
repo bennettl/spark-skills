@@ -2,18 +2,15 @@
 name: self-review
 description: >-
   Pre-PR self-review gate for the Supaclass app repos (spark-api, spark-web).
-  Run it before opening a pull request on a branch — it is the ONLY automated
-  gate, since neither repo has CI or git hooks. It reviews the working diff
-  against main in whichever repo it runs in, auto-detects the repo, and loads
-  that repo's AGENTS.md "Code Review Rules" plus the stack's non-obvious traps.
-  spark-api: class-validator DTO classes, synchronize:true schema-change risk,
-  ResponseInterceptor on new controllers, leaked entity fields / secrets /
-  console.log, guarded routes. spark-web: QueryKey/Endpoint maps consumed (no
-  hardcoded paths), mutation cache invalidation, handleMutationError, Mantine v7
-  + theme.ts colors, gated queries. When the diff touches a request/response
-  shape, a route, or an api module it hands off to the api-contract-check skill
-  rather than re-diff contracts. Emits findings with file:line + severity and an
-  explicit merge / do-not-merge verdict. It reviews; it does not rewrite.
+  It complements build CI and human review. Reviews the working diff against
+  the actual pull-request base, requires human review when that base is unknown,
+  auto-detects the repo, and loads its AGENTS.md review rules. Checks spark-api
+  DTO validation, synchronize:true schema risk, response envelopes, entity
+  exposure, secrets, and route guards; checks spark-web endpoint/query-key use,
+  cache invalidation, mutation errors, query gating, and Mantine conventions.
+  Contract changes hand off to api-contract-check. Emits file:line findings with
+  severity and a merge, do-not-merge, or incomplete/human-review verdict; it
+  does not rewrite.
 metadata:
   supaclass-repos: [spark-api, spark-web]
   maturity: vertical-slice
@@ -21,28 +18,35 @@ metadata:
 
 # self-review
 
-Neither spark-api nor spark-web has CI or git hooks — **review is the only gate**
-before a PR merges. This skill is that gate, run by the author on their own
-branch before opening the PR. It scopes to what actually changed, applies the
-checks the repo's `AGENTS.md` calls highest-value, and returns a blunt
-**merge / do-not-merge** verdict with file:line findings. It is a review, not a
-rewrite: it tells you what to fix, it does not fix it.
+Both app repos have build CI, but neither has git hooks and their lint/test
+coverage remains incomplete. This skill is a pre-PR judgment gate run by the
+author on their own branch; it complements deterministic CI and human review.
+It scopes to what actually changed, applies the checks the repo's `AGENTS.md`
+calls highest-value, and returns a blunt **merge / do-not-merge / incomplete**
+verdict with file:line findings. It is a review, not a rewrite: it tells you what
+to fix, it does not fix it.
 
 ## When this fires
 
 Run it on a feature branch **before opening a PR**, and again after addressing
 findings. Skip it for a no-op branch (docs-only, a `.md` tweak) — say so and
-stop. If unsure, run it: a clean pass costs a minute, a missed blocker ships a
-bug into a repo with no other safety net.
+stop. If unsure, run it: build CI does not cover the security, data, and
+cross-repository failure modes checked here.
 
 ## Inputs
 
-- **The branch diff.** Review only the changed files, not the whole repo.
-  Compute the base with `git merge-base main HEAD`, then
-  `git diff <base>...HEAD` for committed changes **plus** `git diff <base>` (or
-  `git status`) so uncommitted working-tree edits are included — you are gating
-  what will land, not just what's committed. If the branch isn't off `main`,
-  say which base you used.
+- **The branch diff and actual base.** Review only the changed files, not the
+  whole repo. Establish the review base in this order: a caller-supplied base
+  ref/SHA; the open PR's base from metadata; or — for a pre-PR run with
+  neither — the branch's intended base (its tracked upstream, else `main`),
+  reported explicitly as an **author-declared base**. Never silently
+  substitute `main` when the branch shows stacking evidence (history built on
+  another feature branch, or the author names a different predecessor): there,
+  and whenever no base can be established at all, return an
+  **incomplete / human-review required** result instead of a merge verdict.
+  Compute the merge base between the established base and `HEAD`, then inspect
+  the three-dot committed diff plus `git status` and relevant uncommitted
+  hunks.
 - **The repo.** Auto-detect which repo you're in (see Method 2) and load its
   rule set. The `references/*-checks.md` files in this skill are the **source of
   truth** for the checklists; the repo's `AGENTS.md` "Code Review Rules" +
@@ -54,9 +58,11 @@ bug into a repo with no other safety net.
 
 ## Method
 
-1. **Get the diff.** Resolve the base (`git merge-base main HEAD`) and collect
-   the changed file list + hunks (committed and uncommitted). Group by area
-   (controller, entity, dto, api module, component, …) so checks map cleanly.
+1. **Get the diff.** Resolve the actual PR base ref/SHA as described above,
+   compute its merge base with `HEAD`, and collect the changed file list + hunks
+   (committed and uncommitted). Group by area (controller, entity, dto, api
+   module, component, …) so checks map cleanly. State the exact base and head in
+   the report. An unknown or moving base is not clearance.
 
 2. **Detect the repo** from files at the root, not from the directory name:
    - **spark-api** — `nest-cli.json`, `@nestjs/core` in `package.json`, and the
@@ -64,8 +70,9 @@ bug into a repo with no other safety net.
    - **spark-web** — `vite.config.ts` + `src/api/const.ts`, `react` + `@mantine/*`
      in `package.json`.
    - **neither** — no match. Run only the stack-neutral checks (added secrets,
-     leftover `console.log`/debug, obvious footguns), state that repo-specific
-     rules were unavailable, and keep the verdict scoped to what you could check.
+     sensitive or behavior-changing debug output, obvious footguns), state that
+     repo-specific rules were unavailable, and keep the verdict scoped to what
+     you could check.
 
 3. **Load the rule set.** Open this skill's matching `references/<repo>-checks.md`
    and, if present, the repo's `AGENTS.md`. Reconcile: reference checklist as the
@@ -99,9 +106,10 @@ bug into a repo with no other safety net.
 
 6. **Classify and verdict.** Assign each finding a severity and emit the report
    per `references/report-template.md`: a findings table (`file:line | severity |
-   what | fix-direction`) and an explicit **merge / do-not-merge**. Any blocker
-   or unresolved high ⇒ do-not-merge. Zero findings ⇒ say so plainly and clear
-   the merge.
+   what | fix-direction`) and an explicit **merge / do-not-merge / incomplete**
+   verdict. Any blocker or unresolved high ⇒ do-not-merge. An unknown base or
+   materially incomplete context ⇒ incomplete/human-review. Only a complete
+   review with zero blockers/highs may clear the pre-PR gate.
 
 ## Guardrails (the Supaclass-specific judgment)
 
@@ -114,15 +122,14 @@ bug into a repo with no other safety net.
 - **`synchronize: true` = the entity is the live schema.** No migrations. Treat
   every entity/column edit as a schema mutation on next deploy and weigh
   data-loss before anything else.
-- **Flag any added secret; credit a removed one.** A new key, token, `.env`
-  value, or service-account JSON in the diff is a **blocker** — both repos
-  already carry a committed-secret problem; do not add a third. Never print the
-  secret's value. Conversely, a diff that *untracks or deletes* a committed
-  secret is the prescribed remediation, **not** a finding — but it's rarely
-  complete: the value stays in git history and stays live until rotated. Clear
-  the merge and record a **low follow-up** (rotate the credential + purge
-  history); do not block the cleanup PR, and do not mistake removal for a
-  finished fix.
+- **Flag any added secret; credit a removed one.** A new private key, server
+  token, credential, or service-account JSON is a **blocker**; never print its
+  value. `spark-web` deliberately tracks only values intended to be public in
+  its browser bundle, so review an added environment value for intended public
+  exposure rather than flagging the filename alone. The obsolete API service
+  account key is gone from the current tree but remains in history; never
+  restore it. A cleanup diff should merge, with rotation/history work recorded
+  separately where still applicable.
 - **Never hardcode model IDs or context windows** in findings or examples — no
   `claude-*`/`gpt-*` literals, no "N-token window" assumptions. See
   `meta/model-currency.md`.
