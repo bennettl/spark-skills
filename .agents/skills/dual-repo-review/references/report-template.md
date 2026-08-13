@@ -80,11 +80,11 @@ Ordered and executable, with verification between steps. See
 **Deploy window:** state it always, even when fine.
 
 > **Compatible.** Backend changes are additive from the old bundle's perspective, so
-> users on the pre-deploy frontend are unaffected between steps 3 and 5.
+> users on the pre-deploy frontend are unaffected between steps 3 and 6.
 
 or
 
-> **Not compatible.** `rolledUpAt` is renamed, so between steps 3 and 5 every user on
+> **Not compatible.** `rolledUpAt` is renamed, so between steps 3 and 6 every user on
 > the old bundle sees a blank Process panel. Make the backend serve both names for
 > one release, then narrow after the frontend ships. Deploying back-to-back shortens
 > the outage; it doesn't remove it.

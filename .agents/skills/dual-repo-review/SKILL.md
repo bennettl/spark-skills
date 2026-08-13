@@ -50,10 +50,10 @@ retrospective; say so and scope to what's still actionable.
   feature name to search for. Prefer PRs when they exist — that's what gets merged.
 - **Both repo roots.** Default to sibling checkouts (`../spark-api`,
   `../spark-web`). Both are required for the cross-repo checks; with one, stop and
-  say what you cannot do rather than guessing the other side. For PR inputs,
-  each root must be a clean checkout whose `HEAD` equals the captured head SHA;
-  otherwise create an isolated worktree at that SHA. Never label evidence with a
-  PR boundary while delegates are reading another commit.
+  say what you cannot do rather than guessing the other side. For every PR or
+  named-local-branch input, each root must be a clean checkout whose `HEAD`
+  equals the captured head SHA; otherwise create an isolated worktree at that
+  SHA. Never label evidence with one boundary while delegates read another.
 - **The in-flight caveat.** If a PR is still being actively worked, say so and
   frame findings as advisory — do not issue a merge verdict on a moving target.
 
@@ -63,10 +63,12 @@ retrospective; say so and scope to what's still actionable.
    Before reading either diff, capture an immutable review boundary for each
    half: repo, PR/base ref, base SHA, merge-base SHA, and head SHA. Include both
    tuples in the report and pass the matching root and boundary into delegated
-   reviews. For an open PR, also capture mergeability/test-merge status; a
-   conflicted or unresolved state is **incomplete / human-review required**. A
-   branch name alone is not a review boundary. Materialize both captured heads
-   as described under Inputs before invoking a delegate.
+   reviews. Capture mergeability/test-merge status for every input: use PR
+   metadata/test merge for open PRs and a non-mutating merge-tree check of each
+   local head against its established base. A conflicted or unresolved state is
+   **incomplete / human-review required**. A branch name alone is not a review
+   boundary. Materialize both captured heads as described under Inputs before
+   invoking a delegate.
    **Do not match on name** — the repos don't agree: a backend `src/process-insight/`
    module pairs with a frontend `src/api/process-insights.ts`. Match on the
    **endpoint path** and the **feature vocabulary** in the diff. Then check pair
@@ -133,15 +135,17 @@ retrospective; say so and scope to what's still actionable.
 6. **Revalidate, aggregate, and verdict.** Immediately before issuing a verdict,
    resolve both boundary tuples again and compare them with the captured values.
    Also re-check that each materialized checkout still has the captured `HEAD`
-   and that each open PR remains conflict-free. If a base SHA, merge-base SHA,
-   head SHA, checkout `HEAD`, or mergeability state moved or became unresolved,
+   and that every PR/local branch remains conflict-free against its captured
+   base. If a base SHA, merge-base SHA, head SHA, checkout `HEAD`, or mergeability
+   state moved or became unresolved,
    discard any clearance and return **incomplete / human-review required** until
    the affected review is rerun. Then emit **one** report per
    `references/report-template.md`: findings grouped by origin (spark-api,
    spark-web, seam, ordering), a sequenced merge plan, and a single
-   **merge / do-not-merge / incomplete** verdict. Any blocker on either side, or
-   an unresolved ordering hazard, blocks the pair — a half that is individually
-   clean does not merge alone if landing it first breaks production.
+   **merge / do-not-merge / incomplete** verdict. Any blocker or unresolved high
+   from a delegate, or an unresolved ordering hazard, blocks the pair — a half
+   that is individually clean does not merge alone if landing it first breaks
+   production.
 
 ## Guardrails (the Supaclass-specific judgment)
 

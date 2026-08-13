@@ -129,4 +129,5 @@ person can execute, with the verification step between each:
 6. Perform risk-specific browser/runtime verification against the deployed pair.
 
 Deploy window: **compatible.** Backend changes are additive, so the old frontend
-bundle is unaffected between steps 2 and 4.
+bundle is unaffected between the backend deploy in step 2 and frontend deploy in
+step 5.
