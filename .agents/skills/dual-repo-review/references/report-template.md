@@ -28,7 +28,9 @@ unresolved ordering hazard blocks the pair even when both halves are individuall
 clean. A half that is clean does not merge alone if landing it first breaks
 production. If the verdict differs per half, say which is cleared and which is
 blocked. If either review boundary moved, use **incomplete / human-review
-required** until the affected review reruns.
+required** until the affected review reruns. Also use incomplete when any
+delegated `self-review` or `api-contract-check` fails, degrades, or returns
+incomplete; partial evidence can never clear the pair.
 
 ### Findings by origin
 
