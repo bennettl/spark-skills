@@ -227,10 +227,9 @@ after ~10s.
 
 - **Never reseed or mutate the database.** `~/pi-smoke` holds calibrated
   fixtures the smoke harness asserts on. Do not quote its expected values here:
-  the harness currently hardcodes `attachRate 0.8`, which assumed a
-  fixtures-only DB and is **stale** — with real submissions present the correct
-  answer is 0.83, tracked in SUP2-26. Read the expected values from the harness,
-  and never bend application code to match them.
+  they depend on the current fixture and submission data and have changed before
+  (see SUP2-26). Read the expected values and calculation from the harness or
+  owning ticket, and never bend application code to match them.
 - **Never restart the API or kill the Vite dev server.**
 - Reading and screenshotting is always safe. If you must submit something, use
   the **ZZ Edge Cases** assignment
