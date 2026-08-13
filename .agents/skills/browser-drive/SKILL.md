@@ -54,7 +54,7 @@ node drive.mjs login                              # real form login; caches the 
 node drive.mjs import --from tokens.json          # adopt a browser session (SSO accounts)
 node drive.mjs check                              # is the cached session still good?
 node drive.mjs shot /assignments out.png          # authenticated full-page screenshot
-node drive.mjs text /assignments                  # rendered text + console/HTTP errors
+node drive.mjs text /assignments                  # content-free text metrics + page errors
 node drive.mjs run recipe.mjs --url /assignments  # multi-step interaction
 node drive.mjs shot / out.png --who <staff-account>  # pick a non-default account
 node drive.mjs shot / out.png --headed            # watch it happen
@@ -68,7 +68,7 @@ Then `Read` the PNG — the screenshots are legible at 1400px wide.
 persists to `localStorage` under `auth-store` → `state.accessToken`.
 
 First run logs in through the **real form**. Both tokens are cached to
-`~/.config/supaclass-driver/session-<email>.json`, so later runs seed
+`~/.config/supaclass-driver/session-<email-sha256>.json`, so later runs seed
 `localStorage` and skip the form (~2s instead of ~8s). When the access token
 expires the app refreshes it from the refresh token by itself, so **one password
 login keeps working for the whole Cognito refresh window**; the fresh token is

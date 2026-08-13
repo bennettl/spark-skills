@@ -2,6 +2,7 @@
 // global fetch and WebSocket, so this needs nothing added to any repo.
 import { spawn } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   mkdtempSync,
   readFileSync,
@@ -80,6 +81,10 @@ export class Browser {
     rmSync(portFile, { force: true });
 
     this.proc = spawn(CHROME, args, { stdio: "ignore", detached: false });
+    this.spawnError = null;
+    this.proc.on("error", (err) => {
+      this.spawnError = err;
+    });
 
     // Learn OUR port from OUR profile directory instead of trusting whoever
     // answers on a well-known one. Chrome writes DevToolsActivePort into the
@@ -89,6 +94,8 @@ export class Browser {
     // process we just spawned.
     const deadline = Date.now() + 20000;
     while (Date.now() < deadline) {
+      if (this.spawnError)
+        throw new Error(`Chrome failed to start: ${this.spawnError.message}`);
       if (this.proc.exitCode !== null)
         throw new Error(
           `Chrome exited (code ${this.proc.exitCode}) before the debug endpoint came up`
@@ -112,7 +119,10 @@ export class Browser {
     const vdl = Date.now() + 10000;
     while (Date.now() < vdl) {
       try {
-        const r = await fetch(`http://127.0.0.1:${this.port}/json/version`);
+        const remaining = Math.max(1, vdl - Date.now());
+        const r = await fetch(`http://127.0.0.1:${this.port}/json/version`, {
+          signal: AbortSignal.timeout(Math.min(1000, remaining)),
+        });
         const j = await r.json();
         if (j.webSocketDebuggerUrl) {
           wsUrl = j.webSocketDebuggerUrl;
@@ -129,13 +139,20 @@ export class Browser {
     let pageWs = null;
     const pdl = Date.now() + 10000;
     while (Date.now() < pdl) {
-      const list = await (
-        await fetch(`http://127.0.0.1:${this.port}/json/list`)
-      ).json();
-      const page = list.find((t) => t.type === "page");
-      if (page?.webSocketDebuggerUrl) {
-        pageWs = page.webSocketDebuggerUrl;
-        break;
+      try {
+        const remaining = Math.max(1, pdl - Date.now());
+        const list = await (
+          await fetch(`http://127.0.0.1:${this.port}/json/list`, {
+            signal: AbortSignal.timeout(Math.min(1000, remaining)),
+          })
+        ).json();
+        const page = list.find((t) => t.type === "page");
+        if (page?.webSocketDebuggerUrl) {
+          pageWs = page.webSocketDebuggerUrl;
+          break;
+        }
+      } catch {
+        /* endpoint not ready or request timed out */
       }
       await sleep(150);
     }
@@ -267,17 +284,25 @@ export class Browser {
     return r.result.value;
   }
 
-  async goto(url, { waitUntil = "load" } = {}) {
+  async goto(url, { waitUntil = "load", timeout = 15000 } = {}) {
     const ev = waitUntil === "load" ? "Page.loadEventFired" : "Page.domContentEventFired";
     let unsubscribe;
-    const loaded = new Promise((resolve) => {
-      unsubscribe = this.on(ev, () => resolve());
-      setTimeout(resolve, 15000);
+    let loadTimer;
+    const loaded = new Promise((resolve, reject) => {
+      unsubscribe = this.on(ev, () => {
+        clearTimeout(loadTimer);
+        resolve();
+      });
+      loadTimer = setTimeout(
+        () => reject(new Error(`Navigation timed out waiting for ${ev}`)),
+        timeout
+      );
     });
     try {
       await this.send("Page.navigate", { url });
       await loaded;
     } finally {
+      clearTimeout(loadTimer);
       unsubscribe();
     }
     await this.settle();
@@ -497,7 +522,8 @@ export class Browser {
       params.captureBeyondViewport = true;
     }
     const { data } = await this.send("Page.captureScreenshot", params);
-    writeFileSync(path, Buffer.from(data, "base64"));
+    writeFileSync(path, Buffer.from(data, "base64"), { mode: 0o600 });
+    chmodSync(path, 0o600);
     return path;
   }
 

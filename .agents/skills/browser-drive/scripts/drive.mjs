@@ -5,7 +5,7 @@
 //   login  [--who EMAIL] [--headed]        real form login; caches the session
 //   import --from tokens.json              adopt a session from your own browser (SSO accounts)
 //   shot   <url> <out.png> [--who EMAIL]   authenticated full-page screenshot
-//   text   <url> [--who EMAIL]             dump rendered text + console/HTTP errors
+//   text   <url> [--who EMAIL]             report content-free rendered-text metrics
 //   run    <recipe.mjs> [--url PATH]       run a recipe against an authed browser
 //   check  [--who EMAIL]                   is the cached session still valid?
 import { pathToFileURL } from "node:url";
@@ -164,7 +164,11 @@ try {
       const b = await authedBrowser({ who: flag("who"), url: url ?? "/", ...opts });
       try {
         console.log(`URL: ${await b.url()}\n`);
-        console.log(await b.text());
+        const rendered = await b.text();
+        console.log(
+          `Rendered text: ${rendered.length} characters across ${rendered.split(/\r?\n/).length} lines ` +
+            "(content redacted; use a narrowly scoped recipe assertion instead of printing customer data)"
+        );
         reportEvents(b);
       } finally {
         await b.close();
