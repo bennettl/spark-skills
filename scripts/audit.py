@@ -157,7 +157,11 @@ def verified_app_repo(name, path):
     if os.path.realpath(top) != os.path.realpath(path):
         return None
     normalized_origin = origin.removesuffix(".git").rstrip("/")
-    if not re.search(rf"(?:[:/])bennettl/{re.escape(name)}$", normalized_origin):
+    expected_origin = re.compile(
+        rf"^(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)"
+        rf"bennettl/{re.escape(name)}$"
+    )
+    if not expected_origin.match(normalized_origin):
         return None
     return head
 
