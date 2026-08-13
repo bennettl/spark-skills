@@ -50,7 +50,10 @@ retrospective; say so and scope to what's still actionable.
   feature name to search for. Prefer PRs when they exist — that's what gets merged.
 - **Both repo roots.** Default to sibling checkouts (`../spark-api`,
   `../spark-web`). Both are required for the cross-repo checks; with one, stop and
-  say what you cannot do rather than guessing the other side.
+  say what you cannot do rather than guessing the other side. For PR inputs,
+  each root must be a clean checkout whose `HEAD` equals the captured head SHA;
+  otherwise create an isolated worktree at that SHA. Never label evidence with a
+  PR boundary while delegates are reading another commit.
 - **The in-flight caveat.** If a PR is still being actively worked, say so and
   frame findings as advisory — do not issue a merge verdict on a moving target.
 
@@ -60,7 +63,10 @@ retrospective; say so and scope to what's still actionable.
    Before reading either diff, capture an immutable review boundary for each
    half: repo, PR/base ref, base SHA, merge-base SHA, and head SHA. Include both
    tuples in the report and pass the matching root and boundary into delegated
-   reviews. A branch name alone is not a review boundary.
+   reviews. For an open PR, also capture mergeability/test-merge status; a
+   conflicted or unresolved state is **incomplete / human-review required**. A
+   branch name alone is not a review boundary. Materialize both captured heads
+   as described under Inputs before invoking a delegate.
    **Do not match on name** — the repos don't agree: a backend `src/process-insight/`
    module pairs with a frontend `src/api/process-insights.ts`. Match on the
    **endpoint path** and the **feature vocabulary** in the diff. Then check pair
@@ -80,7 +86,8 @@ retrospective; say so and scope to what's still actionable.
    intended repo before trusting its findings; if it reports "neither," the
    delegation failed and the per-repo half of this review is missing. Do not
    re-derive its checks here — collect its findings and carry the severities into
-   the aggregate verdict.
+   the aggregate verdict. A failed or **incomplete** delegated review makes the
+   aggregate result incomplete; absence of blocker findings is not clearance.
 
 3. **Delegate the REST seam.** Run **`api-contract-check`** for each endpoint the
    pair touches. It owns field-by-field shape, envelope, pagination, casing, and
@@ -123,9 +130,11 @@ retrospective; say so and scope to what's still actionable.
 
 6. **Revalidate, aggregate, and verdict.** Immediately before issuing a verdict,
    resolve both boundary tuples again and compare them with the captured values.
-   If either base SHA, merge-base SHA, or head SHA moved, discard any clearance
-   and return **incomplete / human-review required** until the affected review is
-   rerun. Then emit **one** report per
+   Also re-check that each materialized checkout still has the captured `HEAD`
+   and that each open PR remains conflict-free. If a base SHA, merge-base SHA,
+   head SHA, checkout `HEAD`, or mergeability state moved or became unresolved,
+   discard any clearance and return **incomplete / human-review required** until
+   the affected review is rerun. Then emit **one** report per
    `references/report-template.md`: findings grouped by origin (spark-api,
    spark-web, seam, ordering), a sequenced merge plan, and a single
    **merge / do-not-merge / incomplete** verdict. Any blocker on either side, or

@@ -122,7 +122,10 @@ person can execute, with the verification step between each:
 3. Verify: `GET /process-insights?...` returns `{ "data": … }`; the consumer logs a
    successful poll.
 4. Merge + deploy **spark-web** #M.
-5. Verify manually in the browser — spark-web has no test framework.
+5. Discover and run the checks available in the target spark-web branch's
+   package scripts and CI configuration, then perform risk-specific browser
+   verification. Record exact commands/results and explicitly state any changed
+   behavior that has no automated coverage.
 
 Deploy window: **compatible.** Backend changes are additive, so the old frontend
 bundle is unaffected between steps 2 and 4.
