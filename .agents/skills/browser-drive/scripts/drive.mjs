@@ -78,12 +78,15 @@ try {
     case "login": {
       const creds = getCredentials(flag("who"));
       const b = await launch(opts);
-      const tokens = await loginThroughUI(b, creds);
-      const path = writeSession(creds.email, tokens);
-      console.log(`Logged in as ${creds.email}`);
-      console.log(`Landed on ${await b.url()}`);
-      console.log(`Session cached at ${path} (mode 600)`);
-      await b.close();
+      try {
+        const tokens = await loginThroughUI(b, creds);
+        const path = writeSession(creds.email, tokens);
+        console.log(`Logged in as ${creds.email}`);
+        console.log(`Landed on ${await b.url()}`);
+        console.log(`Session cached at ${path} (mode 600)`);
+      } finally {
+        await b.close();
+      }
       break;
     }
     case "import": {
@@ -145,21 +148,27 @@ try {
       const [url, out] = positional;
       if (!url || !out) throw new Error("usage: shot <url> <out.png>");
       const b = await authedBrowser({ who: flag("who"), url, ...opts });
-      await b.screenshot(resolve(out));
-      console.log(`authenticated as ${b.account.email} via ${b.how}`);
-      console.log(`URL: ${await b.url()}`);
-      console.log(`Wrote ${resolve(out)}`);
-      reportEvents(b);
-      await b.close();
+      try {
+        await b.screenshot(resolve(out));
+        console.log(`authenticated as ${b.account.email} via ${b.how}`);
+        console.log(`URL: ${await b.url()}`);
+        console.log(`Wrote ${resolve(out)}`);
+        reportEvents(b);
+      } finally {
+        await b.close();
+      }
       break;
     }
     case "text": {
       const [url] = positional;
       const b = await authedBrowser({ who: flag("who"), url: url ?? "/", ...opts });
-      console.log(`URL: ${await b.url()}\n`);
-      console.log(await b.text());
-      reportEvents(b);
-      await b.close();
+      try {
+        console.log(`URL: ${await b.url()}\n`);
+        console.log(await b.text());
+        reportEvents(b);
+      } finally {
+        await b.close();
+      }
       break;
     }
     case "run": {

@@ -18,6 +18,7 @@ export const API_ORIGIN = process.env.SUPACLASS_API_ORIGIN ?? "http://localhost:
 const CONFIG_DIR = process.env.SUPACLASS_DRIVER_CONFIG_DIR ?? join(homedir(), ".config", "supaclass-driver");
 
 const normalizeEmail = (s) => s.trim().toLowerCase();
+const authRequestSignal = () => AbortSignal.timeout(10000);
 const sessionKey = (email) =>
   createHash("sha256").update(normalizeEmail(email), "utf8").digest("hex");
 
@@ -55,6 +56,7 @@ export async function importSession({ accessToken, refreshToken, who }) {
   if (!accessToken) throw new Error("importSession needs an accessToken");
   const r = await fetch(`${API_ORIGIN}/users/me`, {
     headers: { Authorization: `Bearer ${accessToken}` },
+    signal: authRequestSignal(),
   });
   if (r.status !== 200)
     throw new Error(
@@ -100,6 +102,7 @@ export async function tokenIsValid(accessToken, expectedEmail) {
   try {
     const r = await fetch(`${API_ORIGIN}/users/me`, {
       headers: { Authorization: `Bearer ${accessToken}` },
+      signal: authRequestSignal(),
     });
     if (r.status !== 200) return false;
     if (!expectedEmail) return true;

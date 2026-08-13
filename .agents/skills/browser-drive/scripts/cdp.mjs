@@ -194,10 +194,18 @@ export class Browser {
       this.handlers = new Map();
       this.ws.onopen = () => resolve();
       this.ws.onerror = (e) => reject(new Error("ws error: " + e.message));
+      this.ws.onclose = () => {
+        for (const { reject: rejectPending, timer } of this.pending.values()) {
+          clearTimeout(timer);
+          rejectPending(new Error("CDP websocket closed"));
+        }
+        this.pending.clear();
+      };
       this.ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
         if (msg.id && this.pending.has(msg.id)) {
-          const { resolve: res, reject: rej } = this.pending.get(msg.id);
+          const { resolve: res, reject: rej, timer } = this.pending.get(msg.id);
+          clearTimeout(timer);
           this.pending.delete(msg.id);
           msg.error ? rej(new Error(JSON.stringify(msg.error))) : res(msg.result);
         } else if (msg.method) {
@@ -227,14 +235,20 @@ export class Browser {
   send(method, params = {}) {
     const id = ++this.msgId;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.ws.send(JSON.stringify({ id, method, params }));
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         if (this.pending.has(id)) {
           this.pending.delete(id);
           reject(new Error(`CDP timeout: ${method}`));
         }
       }, 30000);
+      this.pending.set(id, { resolve, reject, timer });
+      try {
+        this.ws.send(JSON.stringify({ id, method, params }));
+      } catch (err) {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        reject(err);
+      }
     });
   }
 
@@ -549,5 +563,11 @@ export class Browser {
 }
 
 export async function launch(opts) {
-  return new Browser(opts).launch();
+  const browser = new Browser(opts);
+  try {
+    return await browser.launch();
+  } catch (err) {
+    await browser.close().catch(() => {});
+    throw err;
+  }
 }
