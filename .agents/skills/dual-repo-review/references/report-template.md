@@ -23,11 +23,12 @@ comparable across runs.
 > type, destructive under `synchronize: true`). spark-api is otherwise clean;
 > spark-web has 2 mediums.
 
-Rules: any blocker on either side blocks the **pair**. An unresolved ordering hazard
-blocks the pair even when both halves are individually clean. A half that is clean
-does not merge alone if landing it first breaks production. If the verdict differs
-per half, say which is cleared and which is blocked. If either review boundary
-moved, use **incomplete / human-review required** until the affected review reruns.
+Rules: any blocker or unresolved high from any origin blocks the **pair**. An
+unresolved ordering hazard blocks the pair even when both halves are individually
+clean. A half that is clean does not merge alone if landing it first breaks
+production. If the verdict differs per half, say which is cleared and which is
+blocked. If either review boundary moved, use **incomplete / human-review
+required** until the affected review reruns.
 
 ### Findings by origin
 

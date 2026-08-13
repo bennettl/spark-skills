@@ -143,9 +143,9 @@ retrospective; say so and scope to what's still actionable.
    `references/report-template.md`: findings grouped by origin (spark-api,
    spark-web, seam, ordering), a sequenced merge plan, and a single
    **merge / do-not-merge / incomplete** verdict. Any blocker or unresolved high
-   from a delegate, or an unresolved ordering hazard, blocks the pair — a half
-   that is individually clean does not merge alone if landing it first breaks
-   production.
+   from **any origin** (delegate, REST seam, cross-repo seam, or ordering), or an
+   unresolved ordering hazard, blocks the pair — a half that is individually
+   clean does not merge alone if landing it first breaks production.
 
 ## Guardrails (the Supaclass-specific judgment)
 
