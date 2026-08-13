@@ -108,8 +108,8 @@ Do not guess the other side.
 
 > **Cannot complete.** Only `spark-web` is checked out, so the REST seam, the event
 > contract, and orphan detection are unavailable — all three need both sides. Ran
-> `self-review` on spark-web alone: 2 mediums, no blockers. **No pair verdict.**
-> Re-run with `../spark-api` present.
+> `self-review` on spark-web alone: 2 mediums, no blockers. **Incomplete / human
+> review required; no merge clearance.** Re-run with `../spark-api` present.
 
 ## When the sibling doesn't exist
 
