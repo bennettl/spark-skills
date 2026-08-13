@@ -118,4 +118,6 @@ An orphan is a finding, not a footnote.
 > **No sibling change found.** spark-api #85 adds 4 routes under
 > `/process-insights`; no spark-web branch or PR consumes them, and no `Endpoint`
 > entry references them. Either the frontend half hasn't been opened yet (say so and
-> re-run when it is), or this backend ships inert. Confirm which before merging.
+> re-run when it is), or this backend intentionally ships inert. **Incomplete /
+> human-review required** until intent is confirmed; if the sibling is required,
+> the verdict is **do not merge**.
