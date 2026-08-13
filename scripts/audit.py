@@ -43,6 +43,7 @@ floor, not the ceiling.
 import difflib
 import os
 import re
+import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -128,6 +129,37 @@ def read(path):
 
 def rel(path):
     return os.path.relpath(path, ROOT)
+
+
+def verified_app_repo(name, path):
+    """Return the checkout HEAD only for the expected Git repository."""
+    try:
+        top = subprocess.run(
+            ["git", "-C", path, "rev-parse", "--show-toplevel"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        head = subprocess.run(
+            ["git", "-C", path, "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        origin = subprocess.run(
+            ["git", "-C", path, "remote", "get-url", "origin"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    if os.path.realpath(top) != os.path.realpath(path):
+        return None
+    normalized_origin = origin.removesuffix(".git").rstrip("/")
+    if not re.search(rf"(?:[:/])bennettl/{re.escape(name)}$", normalized_origin):
+        return None
+    return head
 
 
 def load_allowed_paths():
@@ -396,12 +428,24 @@ def main():
     if ALLOWED_PATHS:
         note(f"{len(ALLOWED_PATHS)} path claim(s) allowlisted via meta/audit-allow.txt")
 
-    available = {n: p for n, p in APP_REPOS.items() if os.path.isdir(p)}
+    repo_heads = {
+        name: verified_app_repo(name, path)
+        for name, path in APP_REPOS.items()
+        if os.path.isdir(path)
+    }
+    available = {
+        name: APP_REPOS[name]
+        for name, head in repo_heads.items()
+        if head is not None
+    }
+    for name in sorted(available):
+        note(f"{name} verified at {repo_heads[name]}")
     missing_repos = sorted(set(APP_REPOS) - set(available))
     if missing_repos:
         note(
-            "app-path absence verification fully deferred until both sibling "
-            f"repos are checked out (missing: {', '.join(missing_repos)})"
+            "app-path absence verification fully deferred until both expected "
+            "Git sibling repos have a readable HEAD and matching origin "
+            f"(missing or invalid: {', '.join(missing_repos)})"
         )
 
     for name, skill_dir in skills.items():
