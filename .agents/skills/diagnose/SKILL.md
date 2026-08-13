@@ -125,10 +125,11 @@ straight to `api-contract-check`.
   resolves the confirmed cause and matches surrounding convention. If the bug is
   an instance of a recurring class, note that once as a follow-up — don't expand
   the diagnosis into a refactor proposal.
-- **Never print secret values.** Both repos have known committed-credential
-  problems (a GCP service-account key in spark-api, a git-tracked `.env` in
-  spark-web). If a diagnosis touches them, reference the file, never the value,
-  and don't re-litigate the known issue as a new finding.
+- **Never print secret values.** The obsolete API service-account key is absent
+  from the current tree but remains in history. The web repo deliberately tracks
+  only browser-public environment values. If a diagnosis touches configuration,
+  reference the file, never a value; flag any server credential or value not
+  intended for public bundle exposure.
 - **Never hardcode model IDs or context windows** in findings or examples. Where
   the grading/LLM path is implicated, refer to the config or service value that
   selects the model. See `meta/model-currency.md`.

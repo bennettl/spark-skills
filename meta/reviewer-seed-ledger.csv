@@ -1,0 +1,1 @@
+seed_id,pr_url,category,evaluation_version,policy_version,synthetic_defect,expected_outcome,expected_severity,safety_verified_by,safety_verified_at,attempt_id,observed_finding_id,result,evidence
