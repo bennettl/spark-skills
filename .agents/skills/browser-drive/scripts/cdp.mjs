@@ -2,7 +2,6 @@
 // global fetch and WebSocket, so this needs nothing added to any repo.
 import { spawn } from "node:child_process";
 import {
-  chmodSync,
   closeSync,
   constants,
   existsSync,
@@ -560,7 +559,6 @@ export class Browser {
       writeFileSync(fd, Buffer.from(data, "base64"));
       closeSync(fd);
       fd = undefined;
-      chmodSync(tmp, 0o600);
       // Atomic replacement changes the destination directory entry; an
       // existing symlink is replaced rather than followed to its target.
       renameSync(tmp, path);

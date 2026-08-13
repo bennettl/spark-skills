@@ -62,11 +62,11 @@ const readPrivateConfig = (path) => {
   const fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
   try {
     const st = fstatSync(fd);
-    if (!st.isFile()) throw new Error(`Sensitive config is not a regular file: ${path}`);
+    if (!st.isFile()) throw new Error("Sensitive config was rejected: not a regular file");
     if (typeof process.getuid === "function" && st.uid !== process.getuid())
-      throw new Error(`Sensitive config is owned by another user: ${path}`);
+      throw new Error("Sensitive config was rejected: owned by another user");
     if ((st.mode & 0o077) !== 0)
-      throw new Error(`Sensitive config must have mode 0600 or stricter: ${path}`);
+      throw new Error("Sensitive config was rejected: mode must be 0600 or stricter");
     return readFileSync(fd, "utf8");
   } finally {
     closeSync(fd);
@@ -158,7 +158,6 @@ export function writeSession(email, tokens) {
     );
     closeSync(fd);
     fd = undefined;
-    chmodSync(tmp, 0o600);
     // Atomic replacement changes the directory entry itself; an existing
     // session-path symlink is replaced, never followed to its target.
     renameSync(tmp, p);
@@ -303,7 +302,14 @@ export async function authedBrowser({ who, url = "/", force = false, ...opts } =
   b.how = how;
   return b;
   } catch (err) {
-    await b.close().catch(() => {});
+    try {
+      await b.close();
+    } catch (cleanupErr) {
+      throw new Error(
+        "Authenticated setup failed and sensitive browser-profile cleanup also failed",
+        { cause: new AggregateError([err, cleanupErr]) }
+      );
+    }
     throw err;
   }
 }
