@@ -152,12 +152,22 @@ def check_reference_integrity(name, skill_dir):
     if not os.path.isfile(skill_md):
         return
     body = read(skill_md)
-    cited = set(re.findall(r"references/([A-Za-z0-9._-]+\.md)", body))
+    cited = set(re.findall(r"references/([A-Za-z0-9._/-]+\.md)", body))
 
     ref_dir = os.path.join(skill_dir, "references")
     on_disk = set()
     if os.path.isdir(ref_dir):
-        on_disk = {f for f in os.listdir(ref_dir) if f.endswith(".md")}
+        on_disk = {
+            os.path.relpath(os.path.join(base, f), ref_dir).replace(os.sep, "/")
+            for base, _, files in os.walk(ref_dir)
+            for f in files
+            if f.endswith(".md")
+        }
+
+    for ref in sorted(cited):
+        candidate = os.path.abspath(os.path.join(ref_dir, ref))
+        if os.path.commonpath((ref_dir, candidate)) != ref_dir:
+            fail(f"{name}: unsafe reference path references/{ref}")
 
     for missing in sorted(cited - on_disk):
         fail(f"{name}: SKILL.md cites references/{missing} which does not exist")
@@ -188,8 +198,22 @@ def check_skill_crossrefs(name, skill_dir, all_skills):
             # registry is full of kebab-case tokens that are libraries, not skills.
             if not SKILL_SHAPE.match(tok) or tok in seen:
                 continue
-            context = lines[line - 1]
-            if not re.search(r"\bskill\b|\bdelegat(?:e|es|ed|ion)\b|\bhandoff\b|\bhand off\b", context, re.I):
+            # Markdown often puts the delegation verb in the line preceding a
+            # bullet that contains the callee. Use the surrounding paragraph,
+            # bounded by blank lines, rather than unrelated whole-document text.
+            start = line - 1
+            while start > 0 and lines[start - 1].strip():
+                start -= 1
+            end = line
+            while end < len(lines) and lines[end].strip():
+                end += 1
+            context = "\n".join(lines[start:end])
+            explicit_context = re.search(
+                r"\bdelegat(?:e|es|ed|ion)\b|\bhandoff\b|\bhand off\b",
+                context,
+                re.I,
+            ) or re.search(r"\bskill\b", lines[line - 1], re.I)
+            if not explicit_context:
                 continue
             close = difflib.get_close_matches(tok, sorted(KNOWN_SKILL_NAMES), n=1, cutoff=0.8)
             if close:
@@ -345,8 +369,12 @@ def main():
         note(f"{len(ALLOWED_PATHS)} path claim(s) allowlisted via meta/audit-allow.txt")
 
     available = {n: p for n, p in APP_REPOS.items() if os.path.isdir(p)}
-    for n in sorted(set(APP_REPOS) - set(available)):
-        note(f"{n} not checked out — repo-path verification skipped for it")
+    missing_repos = sorted(set(APP_REPOS) - set(available))
+    if missing_repos:
+        note(
+            "app-path absence verification fully deferred until both sibling "
+            f"repos are checked out (missing: {', '.join(missing_repos)})"
+        )
 
     for name, skill_dir in skills.items():
         check_reference_integrity(name, skill_dir)
@@ -363,7 +391,7 @@ def main():
         print(f"FAIL  {e}")
 
     print(
-        f"\nAudited {len(skills)} skill(s) against {len(available)} app repo(s): "
+        f"\nAudited {len(skills)} skill(s) with {len(available)} app repo(s) available: "
         f"{len(errors)} error(s), {len(warnings)} warning(s)."
     )
     return 1 if errors else 0
