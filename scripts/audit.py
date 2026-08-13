@@ -131,14 +131,18 @@ def rel(path):
 
 
 def load_allowed_paths():
-    """Paths a skill cites on purpose while they're absent. See meta/audit-allow.txt."""
+    """Claim-scoped absent paths. See meta/audit-allow.txt."""
     allowed = set()
     if not os.path.isfile(ALLOW_FILE):
         return allowed
     for line in read(ALLOW_FILE).splitlines():
         entry = line.split("#", 1)[0].strip()
         if entry:
-            allowed.add(entry)
+            parts = tuple(part.strip() for part in entry.split("|", 1))
+            if len(parts) != 2 or not all(parts):
+                fail(f"{rel(ALLOW_FILE)}: malformed allow entry '{entry}'")
+                continue
+            allowed.add(parts)
     return allowed
 
 
@@ -184,6 +188,9 @@ def check_skill_crossrefs(name, skill_dir, all_skills):
             # registry is full of kebab-case tokens that are libraries, not skills.
             if not SKILL_SHAPE.match(tok) or tok in seen:
                 continue
+            context = lines[line - 1]
+            if not re.search(r"\bskill\b|\bdelegat(?:e|es|ed|ion)\b|\bhandoff\b|\bhand off\b", context, re.I):
+                continue
             close = difflib.get_close_matches(tok, sorted(KNOWN_SKILL_NAMES), n=1, cutoff=0.8)
             if close:
                 seen.add(tok)
@@ -191,7 +198,7 @@ def check_skill_crossrefs(name, skill_dir, all_skills):
                     f"{rel(path)}:{line}: references skill '{tok}' which does not exist "
                     f"— did you mean '{close[0]}'? (typo or stale rename)"
                 )
-            elif "skill" in lines[line - 1].lower():
+            else:
                 seen.add(tok)
                 warn(
                     f"{rel(path)}:{line}: '{tok}' is described as a skill but is neither "
@@ -220,8 +227,6 @@ def check_repo_paths(name, skill_dir, available):
     docs/credit-reservation.md, a scripts/setup-queue.sh that lived only on an
     unmerged branch. A wrong path reads as verified, which is worse than silence.
     """
-    if not available:
-        return
     for path in md_files(skill_dir):
         if os.path.basename(path) in EXEMPT_BASENAMES:
             continue
@@ -240,7 +245,12 @@ def check_repo_paths(name, skill_dir, available):
                     line = text[: m.start()].count("\n") + 1
                     fail(f"{rel(path)}:{line}: registry path '{tok}' does not exist")
                     continue
-            if tok in ALLOWED_PATHS:
+            if (rel(path), tok) in ALLOWED_PATHS:
+                continue
+            # A token may belong to the missing sibling. Until both app repos
+            # are available, a negative conclusion is ambiguous; keep local
+            # registry-path checks above, but skip app-path absence warnings.
+            if set(available) != set(APP_REPOS):
                 continue
             found = False
             for repo_root in available.values():
@@ -332,7 +342,7 @@ def main():
     global ALLOWED_PATHS
     ALLOWED_PATHS = load_allowed_paths()
     if ALLOWED_PATHS:
-        note(f"{len(ALLOWED_PATHS)} path(s) allowlisted via meta/audit-allow.txt")
+        note(f"{len(ALLOWED_PATHS)} path claim(s) allowlisted via meta/audit-allow.txt")
 
     available = {n: p for n, p in APP_REPOS.items() if os.path.isdir(p)}
     for n in sorted(set(APP_REPOS) - set(available)):
