@@ -121,11 +121,12 @@ person can execute, with the verification step between each:
    added to `assignment`. Additive; no data-loss risk.
 3. Verify: `GET /process-insights?...` returns `{ "data": … }`; the consumer logs a
    successful poll.
-4. Merge + deploy **spark-web** #M.
-5. Discover and run the checks available in the target spark-web branch's
-   package scripts and CI configuration, then perform risk-specific browser
-   verification. Record exact commands/results and explicitly state any changed
-   behavior that has no automated coverage.
+4. Before frontend deployment, discover and run the checks available in the
+   target spark-web branch's package scripts and CI configuration. Record exact
+   commands/results and explicitly state any changed behavior without automated
+   coverage; a failing required check blocks this sequence.
+5. Merge + deploy **spark-web** #M.
+6. Perform risk-specific browser/runtime verification against the deployed pair.
 
 Deploy window: **compatible.** Backend changes are additive, so the old frontend
 bundle is unaffected between steps 2 and 4.

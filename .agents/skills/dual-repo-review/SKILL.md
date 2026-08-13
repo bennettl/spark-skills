@@ -92,7 +92,9 @@ retrospective; say so and scope to what's still actionable.
 3. **Delegate the REST seam.** Run **`api-contract-check`** for each endpoint the
    pair touches. It owns field-by-field shape, envelope, pagination, casing, and
    date/number serialization. Do not re-diff types here — pass it the endpoints and
-   consume its findings.
+   consume its findings. A failed, single-repo-degraded, or **incomplete**
+   contract check makes the aggregate result incomplete; partial REST evidence
+   can never clear the pair.
 
 4. **Own the seam inventory** — the cross-repo contact points nothing else checks.
    Full list in `references/seam-inventory.md`. In brief:

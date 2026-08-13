@@ -71,11 +71,11 @@ Ordered and executable, with verification between steps. See
    safe) + **4 edits to existing entities**, of which `submission.status` narrows a
    type — **destructive**, needs additive-then-migrate, not in-place.
 4. Verify: the new route returns `{ "data": … }`; the consumer logs a successful poll.
-5. Merge + deploy **spark-web #73**.
-6. Run the frontend checks discovered from the target branch's package scripts
-   and CI configuration, then perform any risk-specific browser verification.
-   Record the exact commands and results; if no automated check covers the
-   changed behavior, say so explicitly rather than assuming a fixed test setup.
+5. Before frontend deployment, run the checks discovered from the target
+   branch's package scripts and CI configuration. Record exact commands/results;
+   a failure blocks the sequence, and missing coverage must be stated explicitly.
+6. Merge + deploy **spark-web #73**.
+7. Perform risk-specific browser/runtime verification against the deployed pair.
 
 **Deploy window:** state it always, even when fine.
 
