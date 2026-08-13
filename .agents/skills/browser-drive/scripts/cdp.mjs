@@ -564,7 +564,6 @@ export class Browser {
       // Atomic replacement changes the destination directory entry; an
       // existing symlink is replaced rather than followed to its target.
       renameSync(tmp, path);
-      chmodSync(path, 0o600);
     } finally {
       if (fd !== undefined) closeSync(fd);
       if (existsSync(tmp)) unlinkSync(tmp);
@@ -626,9 +625,7 @@ export class Browser {
       }
     }
     if (this.ownsProfile) {
-      try {
-        rmSync(this.profileDir, { recursive: true, force: true });
-      } catch {}
+      rmSync(this.profileDir, { recursive: true, force: true });
     }
   }
 }

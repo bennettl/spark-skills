@@ -129,11 +129,7 @@ const sessionPath = (email) => join(DRIVER_CONFIG_DIR, `session-${sessionKey(ema
 export function readSession(email) {
   const p = sessionPath(email);
   if (!existsSync(p)) return null;
-  try {
-    return JSON.parse(readPrivateConfig(p));
-  } catch {
-    return null;
-  }
+  return JSON.parse(readPrivateConfig(p));
 }
 
 export function writeSession(email, tokens) {
@@ -166,7 +162,6 @@ export function writeSession(email, tokens) {
     // Atomic replacement changes the directory entry itself; an existing
     // session-path symlink is replaced, never followed to its target.
     renameSync(tmp, p);
-    chmodSync(p, 0o600);
   } finally {
     if (fd !== undefined) closeSync(fd);
     if (existsSync(tmp)) unlinkSync(tmp);
