@@ -175,7 +175,8 @@ retrospective; say so and scope to what's still actionable.
 - **Scope to the diff.** Pre-existing cross-repo drift outside the changed lines
   is not this review's job; note it once as a follow-up at most.
 - **Respect in-flight work.** A PR under active development gets advisory
-  findings, not a verdict.
+  findings plus an **incomplete / human-review required** disposition, never
+  merge clearance. Re-run at a stable boundary.
 
 ## References
 
