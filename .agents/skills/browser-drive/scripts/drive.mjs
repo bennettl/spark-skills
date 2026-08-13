@@ -10,7 +10,7 @@
 //   check  [--who EMAIL]                   is the cached session still valid?
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
-import { readFileSync, unlinkSync } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readFileSync, unlinkSync } from "node:fs";
 import {
   authedBrowser,
   getCredentials,
@@ -58,6 +58,21 @@ const reportEvents = (b) => {
   }
 };
 
+const readPrivateTokenFile = (path) => {
+  const fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  try {
+    const st = fstatSync(fd);
+    if (!st.isFile()) throw new Error(`Token import path is not a regular file: ${path}`);
+    if (typeof process.getuid === "function" && st.uid !== process.getuid())
+      throw new Error(`Token import file is owned by another user: ${path}`);
+    if ((st.mode & 0o077) !== 0)
+      throw new Error(`Token import file must have mode 0600 or stricter: ${path}`);
+    return readFileSync(fd, "utf8");
+  } finally {
+    closeSync(fd);
+  }
+};
+
 try {
   switch (cmd) {
     case "login": {
@@ -81,7 +96,7 @@ try {
       let shredAfterRead = false;
       try {
         if (fromPath) {
-          const raw = readFileSync(fromPath, "utf8");
+          const raw = readPrivateTokenFile(fromPath);
           shredAfterRead = has("shred");
           tokens = JSON.parse(raw);
           if (tokens.state) tokens = tokens.state; // accept a raw auth-store blob

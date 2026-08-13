@@ -185,6 +185,7 @@ async function storeToken(b) {
 export async function authedBrowser({ who, url = "/", force = false, ...opts } = {}) {
   const creds = getCredentials(who);
   const b = await launch(opts);
+  try {
   const target = `${WEB_ORIGIN}${url.startsWith("/") ? url : "/" + url}`;
   const cached = force ? null : readSession(creds.email);
   let how = "form login";
@@ -227,4 +228,8 @@ export async function authedBrowser({ who, url = "/", force = false, ...opts } =
   b.account = creds;
   b.how = how;
   return b;
+  } catch (err) {
+    await b.close().catch(() => {});
+    throw err;
+  }
 }

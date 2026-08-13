@@ -50,6 +50,8 @@ export class Browser {
     this.msgId = 0;
     this.pending = new Map();
     this.events = [];
+    this.inflightRequests = new Set();
+    this.networkLastActivity = Date.now();
   }
 
   async launch() {
@@ -168,6 +170,21 @@ export class Browser {
           url: p.response.url,
         });
     });
+    const noteNetworkActivity = () => {
+      this.networkLastActivity = Date.now();
+    };
+    this.on("Network.requestWillBeSent", (p) => {
+      this.inflightRequests.add(p.requestId);
+      noteNetworkActivity();
+    });
+    this.on("Network.loadingFinished", (p) => {
+      this.inflightRequests.delete(p.requestId);
+      noteNetworkActivity();
+    });
+    this.on("Network.loadingFailed", (p) => {
+      this.inflightRequests.delete(p.requestId);
+      noteNetworkActivity();
+    });
     return this;
   }
 
@@ -254,34 +271,17 @@ export class Browser {
 
   /** Wait for the network to go quiet — SPA data loads finish after load. */
   async settle(quietMs = 600, timeout = 12000) {
-    let inflight = 0;
-    let last = Date.now();
-    const bump = () => (last = Date.now());
-    // Unsubscribe when done. These used to leak one handler set per call, and
-    // since goto() calls settle(), a long recipe left every stale closure still
-    // running on every network event.
-    const offs = [
-      this.on("Network.requestWillBeSent", () => {
-        inflight++;
-        bump();
-      }),
-      this.on("Network.loadingFinished", () => {
-        inflight--;
-        bump();
-      }),
-      this.on("Network.loadingFailed", () => {
-        inflight--;
-        bump();
-      }),
-    ];
-    try {
-      const deadline = Date.now() + timeout;
-      while (Date.now() < deadline) {
-        if (inflight <= 0 && Date.now() - last > quietMs) return;
-        await sleep(100);
-      }
-    } finally {
-      offs.forEach((off) => off());
+    // Tracking is browser-lifetime state installed immediately after
+    // Network.enable, before any caller navigation. Installing handlers here
+    // would miss SPA requests that began while goto() awaited the load event.
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      if (
+        this.inflightRequests.size === 0 &&
+        Date.now() - this.networkLastActivity > quietMs
+      )
+        return;
+      await sleep(100);
     }
     throw new Error(`Network did not settle within ${timeout}ms`);
   }
@@ -518,10 +518,27 @@ export class Browser {
     try {
       this.ws?.close();
     } catch {}
-    if (this.proc && !this.proc.killed) {
+    const waitForExit = async (timeout) => {
+      if (!this.proc || this.proc.exitCode !== null || this.proc.signalCode !== null) return true;
+      return new Promise((resolveExit) => {
+        const done = () => {
+          clearTimeout(timer);
+          resolveExit(true);
+        };
+        const timer = setTimeout(() => {
+          this.proc.off("exit", done);
+          resolveExit(false);
+        }, timeout);
+        this.proc.once("exit", done);
+      });
+    };
+    if (this.proc && !(await waitForExit(300))) {
       this.proc.kill("SIGTERM");
-      await sleep(300);
-      if (!this.proc.killed) this.proc.kill("SIGKILL");
+      if (!(await waitForExit(1000))) {
+        this.proc.kill("SIGKILL");
+        if (!(await waitForExit(1000)))
+          throw new Error("Chrome did not exit after SIGKILL; profile was not removed");
+      }
     }
     if (this.ownsProfile) {
       try {
