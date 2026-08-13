@@ -230,7 +230,11 @@ def check_repo_paths(name, skill_dir, available):
             if tok.startswith(REGISTRY_ROOTS):
                 # These roots exist in this repo too. Resolve locally; only fall
                 # through to the app repos if it isn't a registry file.
-                if os.path.exists(os.path.join(ROOT, tok)):
+                registry_candidate = os.path.abspath(os.path.join(ROOT, tok))
+                if (
+                    os.path.commonpath((ROOT, registry_candidate)) == ROOT
+                    and os.path.exists(registry_candidate)
+                ):
                     continue
                 if tok.startswith("meta/"):
                     line = text[: m.start()].count("\n") + 1
@@ -238,10 +242,15 @@ def check_repo_paths(name, skill_dir, available):
                     continue
             if tok in ALLOWED_PATHS:
                 continue
-            found = any(
-                os.path.exists(os.path.join(repo_root, tok))
-                for repo_root in available.values()
-            )
+            found = False
+            for repo_root in available.values():
+                candidate = os.path.abspath(os.path.join(repo_root, tok))
+                if (
+                    os.path.commonpath((repo_root, candidate)) == repo_root
+                    and os.path.exists(candidate)
+                ):
+                    found = True
+                    break
             if not found:
                 line = text[: m.start()].count("\n") + 1
                 where = " or ".join(sorted(available))
