@@ -12,8 +12,8 @@ It serves two application repos (siblings of this one):
 
 ## Why this exists
 
-Both application repos have a required-build candidate in GitHub Actions but no
-git hooks, and the API has no migrations (`synchronize: true`). The frontend's API types are **hand-written to
+Both application repos have build CI but no git hooks, and the API has no
+migrations (`synchronize: true`). The frontend's API types are **hand-written to
 mirror the backend — no shared types, no codegen** — so the two drift silently.
 This registry packages the recurring review-and-scaffold work into skills that
 either tool can invoke, so the checks that would otherwise live in someone's head
@@ -110,8 +110,9 @@ Invoke explicitly with `/api-contract-check` (Claude Code) or `$api-contract-che
 3. Validate: `python3 scripts/validate.py` (`just validate`) — checks structure,
    frontmatter, the body line budget, symlink integrity, and a warn-only
    model-currency lint. Exits non-zero on hard failures only.
-4. Open a **pull request** (this repo has no CI, so review is the gate — never
-   commit finished work directly to `main`).
+4. Open a **pull request**. The `Registry` CI check runs the validator; Codex and
+   human review cover judgment that deterministic validation cannot. Never
+   commit finished work directly to `main`.
 
 ## Requirements
 

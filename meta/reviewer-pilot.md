@@ -37,6 +37,10 @@ Record three cohorts separately:
 3. **Seeded evaluation:** synthetic, never-merge PRs labeled `reviewer-eval`.
    These do not count toward prospective coverage or accuracy.
 
+The separate [`spark-skills` backlog calibration](spark-skills-backlog-pilot.md)
+tests reviewer mechanics and development-tool judgment. Never pool it with the
+application cohorts or use it to claim app-specific accuracy.
+
 The attempt ledger records every candidate and its eligibility decision. Changes
 to models, automatic-review settings, policy, taxonomy, or metrics start a new
 `evaluation_version`; the exact `policy_version` is the applicable `AGENTS.md`

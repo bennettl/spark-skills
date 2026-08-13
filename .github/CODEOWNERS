@@ -1,0 +1,8 @@
+# Keep registry behavior, distribution, and reviewer policy visible to both maintainers.
+/.github/ @bennettl @threeqube
+/AGENTS.md @bennettl @threeqube
+/.agents/skills/ @bennettl @threeqube
+/.claude/skills/ @bennettl @threeqube
+/scripts/ @bennettl @threeqube
+/meta/ @bennettl @threeqube
+/Justfile @bennettl @threeqube
