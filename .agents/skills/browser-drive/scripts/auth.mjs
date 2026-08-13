@@ -177,19 +177,17 @@ export function writeSession(email, tokens) {
 /** Cheap server-side check that an access token is still good. */
 export async function tokenIsValid(accessToken, expectedEmail) {
   if (!accessToken) return false;
-  try {
-    const r = await fetch(`${API_ORIGIN}/users/me`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      signal: authRequestSignal(),
-    });
-    if (r.status !== 200) return false;
-    if (!expectedEmail) return true;
-    const body = await r.json();
-    const observedEmail = (body?.data ?? body)?.email;
-    return Boolean(observedEmail) && normalizeEmail(observedEmail) === normalizeEmail(expectedEmail);
-  } catch {
-    return false;
-  }
+  const r = await fetch(`${API_ORIGIN}/users/me`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: authRequestSignal(),
+  });
+  if (r.status === 401 || r.status === 403) return false;
+  if (r.status !== 200)
+    throw new Error(`Session validation unavailable (/users/me status ${r.status})`);
+  const body = await r.json();
+  if (!expectedEmail) return true;
+  const observedEmail = (body?.data ?? body)?.email;
+  return Boolean(observedEmail) && normalizeEmail(observedEmail) === normalizeEmail(expectedEmail);
 }
 
 /**
@@ -228,7 +226,7 @@ export async function loginThroughUI(b, { email, password }) {
                   .map(e => e.innerText.trim()).filter(Boolean);
                 return n.length ? n.join(" | ") : null; })()`
     );
-    if (err) throw new Error(`Login rejected: ${err.replace(/\s+/g, " ").trim()}`);
+    if (err) throw new Error("Login rejected (alert content redacted)");
     await new Promise((r) => setTimeout(r, 300));
   }
   if ((await b.url()).includes("/login")) throw new Error("Login timed out on /login");

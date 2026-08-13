@@ -3,14 +3,20 @@
 import { spawn } from "node:child_process";
 import {
   chmodSync,
+  closeSync,
+  constants,
   existsSync,
   mkdtempSync,
+  openSync,
   readFileSync,
+  renameSync,
   rmSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 // Overridable so this is not pinned to one machine's layout. First match wins.
 const CHROME_CANDIDATES = [
@@ -540,8 +546,29 @@ export class Browser {
       params.captureBeyondViewport = true;
     }
     const { data } = await this.send("Page.captureScreenshot", params);
-    writeFileSync(path, Buffer.from(data, "base64"), { mode: 0o600 });
-    chmodSync(path, 0o600);
+    const tmp = join(dirname(path), `.screenshot-${randomUUID()}.tmp`);
+    let fd;
+    try {
+      fd = openSync(
+        tmp,
+        constants.O_WRONLY |
+          constants.O_CREAT |
+          constants.O_EXCL |
+          (constants.O_NOFOLLOW ?? 0),
+        0o600
+      );
+      writeFileSync(fd, Buffer.from(data, "base64"));
+      closeSync(fd);
+      fd = undefined;
+      chmodSync(tmp, 0o600);
+      // Atomic replacement changes the destination directory entry; an
+      // existing symlink is replaced rather than followed to its target.
+      renameSync(tmp, path);
+      chmodSync(path, 0o600);
+    } finally {
+      if (fd !== undefined) closeSync(fd);
+      if (existsSync(tmp)) unlinkSync(tmp);
+    }
     return path;
   }
 

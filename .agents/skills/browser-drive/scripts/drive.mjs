@@ -35,12 +35,39 @@ import { launch } from "./cdp.mjs";
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-const flag = (name, fallback = undefined) => {
-  const i = argv.indexOf(`--${name}`);
-  return i === -1 ? fallback : argv[i + 1];
-};
-const has = (name) => argv.includes(`--${name}`);
-const positional = argv.slice(1).filter((a, i, arr) => !a.startsWith("--") && !String(arr[i - 1] ?? "").startsWith("--"));
+const valueFlags = new Set(["who", "url", "from"]);
+const booleanFlags = new Set(["headed", "shred"]);
+const flags = new Map();
+const positional = [];
+let parseError = null;
+for (let i = 1; i < argv.length; i++) {
+  const arg = argv[i];
+  if (!arg.startsWith("--")) {
+    positional.push(arg);
+    continue;
+  }
+  const name = arg.slice(2);
+  if (name === "port") {
+    parseError = "--port is no longer supported; browser ownership requires an ephemeral port";
+    break;
+  }
+  if (booleanFlags.has(name)) {
+    flags.set(name, true);
+    continue;
+  }
+  if (!valueFlags.has(name)) {
+    parseError = `Unknown flag: --${name}`;
+    break;
+  }
+  const value = argv[++i];
+  if (!value || value.startsWith("--")) {
+    parseError = `Flag --${name} requires a value`;
+    break;
+  }
+  flags.set(name, value);
+}
+const flag = (name, fallback = undefined) => flags.get(name) ?? fallback;
+const has = (name) => flags.has(name);
 
 // No --port option. Chrome launches on an ephemeral port and the real one is
 // read back from DevToolsActivePort in our own profile dir, which is what proves
@@ -49,15 +76,6 @@ const positional = argv.slice(1).filter((a, i, arr) => !a.startsWith("--") && !S
 // Reject the flag rather than ignoring it: someone passing --port believes they
 // are controlling which browser gets driven, and silently doing something else
 // is the same class of failure this change exists to remove.
-if (has("port")) {
-  console.error(
-    "--port is no longer supported. browser-drive spawns its own Chrome on an\n" +
-      "ephemeral port and reads the real one back from DevToolsActivePort, which is\n" +
-      "what guarantees it drives the browser it launched rather than yours."
-  );
-  process.exit(2);
-}
-
 const opts = { headless: !has("headed") };
 
 const reportEvents = (b) => {
@@ -116,6 +134,7 @@ const readPrivateTokenFile = (path) => {
 };
 
 try {
+  if (parseError) throw new Error(parseError);
   switch (cmd) {
     case "login": {
       const creds = getCredentials(flag("who"));
