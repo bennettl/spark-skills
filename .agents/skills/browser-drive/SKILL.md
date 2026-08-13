@@ -254,14 +254,29 @@ export default async function (b) {
   await new Promise((r) => setTimeout(r, 3500));
   await b.settle();
 
-  for (const c of calls) console.log(c.status, c.url.replace("http://localhost:3002", ""));
+  const relevant = [];
   for (const c of calls.filter((c) => /insight|analytic|topic/i.test(c.url))) {
     const r = await b.send("Network.getResponseBody", { requestId: c.id });
-    console.log(`\n[${c.status}] ${c.url}\n${r.body.slice(0, 600)}`);
+    let emptyCollection = false;
+    try {
+      const parsed = JSON.parse(r.body);
+      const data = parsed?.data?.data ?? parsed?.data ?? parsed;
+      emptyCollection = Array.isArray(data) && data.length === 0;
+    } catch {}
+    relevant.push({ status: c.status, bodyBytes: r.body.length, emptyCollection });
   }
-  console.log(await b.text());
+  const rendered = await b.text();
+  console.log({
+    apiCalls: calls.length,
+    failedApiCalls: calls.filter((c) => c.status >= 400).length,
+    relevant,
+    renderedCharacters: rendered.length,
+  });
 }
 ```
+
+This reports only status, size, and shape metrics. Never print response bodies,
+URLs/query strings, or rendered DOM text from an authenticated page.
 
 Read it in this order:
 

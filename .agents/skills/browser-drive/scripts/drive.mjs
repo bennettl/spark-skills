@@ -188,11 +188,15 @@ try {
       }
       break;
     }
-    default:
+    case undefined:
+    case "help":
       console.log(
         `commands: login | import --from tokens.json | check | shot <url> <out.png> | text <url> | run <recipe.mjs>\n` +
           `origin: ${WEB_ORIGIN}`
       );
+      break;
+    default:
+      throw new Error(`Unknown command: ${cmd}. Run without a command for usage.`);
   }
   process.exitCode = 0;
 } catch (err) {

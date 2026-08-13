@@ -6,14 +6,47 @@
 //
 // We never mint a token. The cache only ever holds tokens the app itself
 // issued in response to a real credential submission.
-import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  closeSync,
+  constants,
+  existsSync,
+  fstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { launch } from "./cdp.mjs";
 
-export const WEB_ORIGIN = process.env.SUPACLASS_WEB_ORIGIN ?? "http://localhost:5173";
-export const API_ORIGIN = process.env.SUPACLASS_API_ORIGIN ?? "http://localhost:3002";
+const trustedLocalOrigin = (label, value) => {
+  const url = new URL(value);
+  const loopback = new Set(["localhost", "127.0.0.1", "[::1]"]);
+  if (
+    !["http:", "https:"].includes(url.protocol) ||
+    !loopback.has(url.hostname) ||
+    url.username ||
+    url.password ||
+    url.pathname !== "/" ||
+    url.search ||
+    url.hash
+  )
+    throw new Error(`${label} must be a root HTTP(S) loopback origin; refusing to expose credentials to ${value}`);
+  return url.origin;
+};
+
+export const WEB_ORIGIN = trustedLocalOrigin(
+  "SUPACLASS_WEB_ORIGIN",
+  process.env.SUPACLASS_WEB_ORIGIN ?? "http://localhost:5173"
+);
+export const API_ORIGIN = trustedLocalOrigin(
+  "SUPACLASS_API_ORIGIN",
+  process.env.SUPACLASS_API_ORIGIN ?? "http://localhost:3002"
+);
 
 const CONFIG_DIR = process.env.SUPACLASS_DRIVER_CONFIG_DIR ?? join(homedir(), ".config", "supaclass-driver");
 
@@ -21,6 +54,21 @@ const normalizeEmail = (s) => s.trim().toLowerCase();
 const authRequestSignal = () => AbortSignal.timeout(10000);
 const sessionKey = (email) =>
   createHash("sha256").update(normalizeEmail(email), "utf8").digest("hex");
+
+const readPrivateConfig = (path) => {
+  const fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  try {
+    const st = fstatSync(fd);
+    if (!st.isFile()) throw new Error(`Sensitive config is not a regular file: ${path}`);
+    if (typeof process.getuid === "function" && st.uid !== process.getuid())
+      throw new Error(`Sensitive config is owned by another user: ${path}`);
+    if ((st.mode & 0o077) !== 0)
+      throw new Error(`Sensitive config must have mode 0600 or stricter: ${path}`);
+    return readFileSync(fd, "utf8");
+  } finally {
+    closeSync(fd);
+  }
+};
 
 /**
  * Credentials come from the environment or a file OUTSIDE the repo, so a
@@ -41,7 +89,7 @@ export function getCredentials(who) {
         `  {"default":"you@example.com","accounts":{"you@example.com":{"password":"...","role":"student"}}}`
     );
   }
-  const cfg = JSON.parse(readFileSync(path, "utf8"));
+  const cfg = JSON.parse(readPrivateConfig(path));
   const email = who ?? cfg.default ?? Object.keys(cfg.accounts ?? {})[0];
   const acct = cfg.accounts?.[email];
   // A missing password is NOT fatal. Google-SSO accounts have no Cognito
@@ -79,7 +127,7 @@ export function readSession(email) {
   const p = sessionPath(email);
   if (!existsSync(p)) return null;
   try {
-    return JSON.parse(readFileSync(p, "utf8"));
+    return JSON.parse(readPrivateConfig(p));
   } catch {
     return null;
   }

@@ -511,7 +511,11 @@ export class Browser {
     const params = { format: "png" };
     if (fullPage) {
       const m = await this.send("Page.getLayoutMetrics");
-      const h = Math.min(Math.ceil(m.cssContentSize.height), 16000);
+      const h = Math.ceil(m.cssContentSize.height);
+      if (h > 16000)
+        throw new Error(
+          `Full-page screenshot is ${h}px tall; refusing to silently truncate above 16000px`
+        );
       params.clip = {
         x: 0,
         y: 0,
