@@ -6,7 +6,8 @@
 //
 // We never mint a token. The cache only ever holds tokens the app itself
 // issued in response to a real credential submission.
-import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { launch } from "./cdp.mjs";
@@ -14,9 +15,11 @@ import { launch } from "./cdp.mjs";
 export const WEB_ORIGIN = process.env.SUPACLASS_WEB_ORIGIN ?? "http://localhost:5173";
 export const API_ORIGIN = process.env.SUPACLASS_API_ORIGIN ?? "http://localhost:3002";
 
-const CONFIG_DIR = join(homedir(), ".config", "supaclass-driver");
+const CONFIG_DIR = process.env.SUPACLASS_DRIVER_CONFIG_DIR ?? join(homedir(), ".config", "supaclass-driver");
 
-const slug = (s) => s.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+const normalizeEmail = (s) => s.trim().toLowerCase();
+const sessionKey = (email) =>
+  createHash("sha256").update(normalizeEmail(email), "utf8").digest("hex");
 
 /**
  * Credentials come from the environment or a file OUTSIDE the repo, so a
@@ -62,13 +65,13 @@ export async function importSession({ accessToken, refreshToken, who }) {
   const me = body?.data ?? body;
   const email = me?.email ?? who;
   if (!email) throw new Error("Could not determine the account email from /users/me");
-  if (who && me?.email && who !== me.email)
+  if (who && me?.email && normalizeEmail(who) !== normalizeEmail(me.email))
     throw new Error(`Token belongs to ${me.email}, not ${who}`);
   const path = writeSession(email, { accessToken, refreshToken: refreshToken ?? null });
   return { email, path, name: [me?.firstName, me?.lastName].filter(Boolean).join(" "), type: me?.type, refreshToken };
 }
 
-const sessionPath = (email) => join(CONFIG_DIR, `session-${slug(email)}.json`);
+const sessionPath = (email) => join(CONFIG_DIR, `session-${sessionKey(email)}.json`);
 
 export function readSession(email) {
   const p = sessionPath(email);
@@ -81,7 +84,10 @@ export function readSession(email) {
 }
 
 export function writeSession(email, tokens) {
-  mkdirSync(CONFIG_DIR, { recursive: true });
+  mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  if (typeof process.getuid === "function" && statSync(CONFIG_DIR).uid !== process.getuid())
+    throw new Error(`Refusing to store a session in ${CONFIG_DIR}: directory is owned by another user`);
+  chmodSync(CONFIG_DIR, 0o700);
   const p = sessionPath(email);
   writeFileSync(p, JSON.stringify({ email, ...tokens, savedAt: new Date().toISOString() }, null, 2));
   chmodSync(p, 0o600);
@@ -89,13 +95,17 @@ export function writeSession(email, tokens) {
 }
 
 /** Cheap server-side check that an access token is still good. */
-export async function tokenIsValid(accessToken) {
+export async function tokenIsValid(accessToken, expectedEmail) {
   if (!accessToken) return false;
   try {
     const r = await fetch(`${API_ORIGIN}/users/me`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    return r.status === 200;
+    if (r.status !== 200) return false;
+    if (!expectedEmail) return true;
+    const body = await r.json();
+    const observedEmail = (body?.data ?? body)?.email;
+    return Boolean(observedEmail) && normalizeEmail(observedEmail) === normalizeEmail(expectedEmail);
   } catch {
     return false;
   }
@@ -186,7 +196,7 @@ export async function authedBrowser({ who, url = "/", force = false, ...opts } =
     await b.seedAuth(WEB_ORIGIN, cached);
     await b.goto(target);
     const current = await storeToken(b);
-    if (await tokenIsValid(current)) {
+    if (await tokenIsValid(current, creds.email)) {
       how = current === cached.accessToken ? "cached session" : "cached session (auto-refreshed)";
       if (current !== cached.accessToken)
         writeSession(creds.email, {
@@ -209,7 +219,7 @@ export async function authedBrowser({ who, url = "/", force = false, ...opts } =
   }
 
   const finalToken = await storeToken(b);
-  if (!(await tokenIsValid(finalToken)))
+  if (!(await tokenIsValid(finalToken, creds.email)))
     throw new Error("Ended up without a valid session — refusing to hand back a half-authenticated page");
   if ((await b.url()).includes("/login"))
     throw new Error(`Redirected to /login while requesting ${url} — account may lack access to that route`);

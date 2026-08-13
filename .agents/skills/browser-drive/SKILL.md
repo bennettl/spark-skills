@@ -85,13 +85,17 @@ for, just captured once rather than every run:
 1. Sign into the app as that account in a normal browser.
 2. DevTools → Application → Local Storage → `auth-store`. Copy **both**
    `state.accessToken` and `state.refreshToken`.
-3. Put them in a file and import it:
+3. Put them in a private, unpredictable temporary file and import it. Use an
+   editor so the token values do not enter shell history:
 
 ```bash
-cat > /tmp/tokens.json <<'EOF'
-{"accessToken":"eyJ…","refreshToken":"eyJ…"}
-EOF
-node drive.mjs import --from /tmp/tokens.json --shred
+token_dir="$(mktemp -d)"
+chmod 700 "$token_dir"
+umask 077
+token_file="$token_dir/tokens.json"
+${EDITOR:-vi} "$token_file"
+node drive.mjs import --from "$token_file" --shred
+rmdir "$token_dir"
 ```
 
 `--shred` deletes the file afterwards. Pasting the entire `auth-store` value

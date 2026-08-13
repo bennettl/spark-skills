@@ -283,6 +283,7 @@ export class Browser {
     } finally {
       offs.forEach((off) => off());
     }
+    throw new Error(`Network did not settle within ${timeout}ms`);
   }
 
   /** Poll until a CSS selector matches (or a predicate returns truthy). */

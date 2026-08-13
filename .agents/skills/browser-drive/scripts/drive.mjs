@@ -77,32 +77,39 @@ try {
       // Tokens come from a file or env so they never land in a transcript.
       const from = flag("from");
       let tokens;
-      if (from) {
-        tokens = JSON.parse(readFileSync(resolve(from), "utf8"));
-        if (tokens.state) tokens = tokens.state; // accept a raw auth-store blob
-      } else if (process.env.SUPACLASS_ACCESS_TOKEN) {
-        tokens = {
-          accessToken: process.env.SUPACLASS_ACCESS_TOKEN,
-          refreshToken: process.env.SUPACLASS_REFRESH_TOKEN,
-        };
-      } else {
-        throw new Error(
-          "usage: import --from tokens.json   (or set SUPACLASS_ACCESS_TOKEN / SUPACLASS_REFRESH_TOKEN)\n" +
-            'tokens.json: {"accessToken":"…","refreshToken":"…"} — paste the whole auth-store value and it works too'
+      const fromPath = from ? resolve(from) : null;
+      let shredAfterRead = false;
+      try {
+        if (fromPath) {
+          const raw = readFileSync(fromPath, "utf8");
+          shredAfterRead = has("shred");
+          tokens = JSON.parse(raw);
+          if (tokens.state) tokens = tokens.state; // accept a raw auth-store blob
+        } else if (process.env.SUPACLASS_ACCESS_TOKEN) {
+          tokens = {
+            accessToken: process.env.SUPACLASS_ACCESS_TOKEN,
+            refreshToken: process.env.SUPACLASS_REFRESH_TOKEN,
+          };
+        } else {
+          throw new Error(
+            "usage: import --from tokens.json   (or set SUPACLASS_ACCESS_TOKEN / SUPACLASS_REFRESH_TOKEN)\n" +
+              'tokens.json: {"accessToken":"…","refreshToken":"…"} — paste the whole auth-store value and it works too'
+          );
+        }
+        const info = await importSession({ ...tokens, who: flag("who") });
+        const who = [info.name, info.type].filter(Boolean).join(", ");
+        console.log(`Imported session for ${info.email}${who ? ` (${who})` : ""}`);
+        console.log(`Cached at ${info.path} (mode 600)`);
+        console.log(
+          info.refreshToken
+            ? "Refresh token present — this session will renew itself for the whole Cognito refresh window."
+            : "WARNING: no refreshToken. The access token expires in ~1h and you will have to re-import."
         );
-      }
-      const info = await importSession({ ...tokens, who: flag("who") });
-      const who = [info.name, info.type].filter(Boolean).join(", ");
-      console.log(`Imported session for ${info.email}${who ? ` (${who})` : ""}`);
-      console.log(`Cached at ${info.path} (mode 600)`);
-      console.log(
-        info.refreshToken
-          ? "Refresh token present — this session will renew itself for the whole Cognito refresh window."
-          : "WARNING: no refreshToken. The access token expires in ~1h and you will have to re-import."
-      );
-      if (from && has("shred")) {
-        unlinkSync(resolve(from));
-        console.log(`Deleted ${resolve(from)}`);
+      } finally {
+        if (shredAfterRead) {
+          unlinkSync(fromPath);
+          console.log(`Deleted ${fromPath}`);
+        }
       }
       break;
     }
@@ -112,7 +119,7 @@ try {
       if (!s) {
         console.log(`No cached session for ${creds.email}`);
       } else {
-        const ok = await tokenIsValid(s.accessToken);
+        const ok = await tokenIsValid(s.accessToken, creds.email);
         console.log(
           `${creds.email}: cached ${s.savedAt} — access token ${ok ? "VALID" : "stale (will refresh or re-login)"}`
         );
@@ -144,10 +151,13 @@ try {
       const [recipe] = positional;
       if (!recipe) throw new Error("usage: run <recipe.mjs>");
       const b = await authedBrowser({ who: flag("who"), url: flag("url", "/"), ...opts });
-      const mod = await import(pathToFileURL(resolve(recipe)).href);
-      await (mod.default ?? mod.run)(b);
-      reportEvents(b);
-      await b.close();
+      try {
+        const mod = await import(pathToFileURL(resolve(recipe)).href);
+        await (mod.default ?? mod.run)(b);
+        reportEvents(b);
+      } finally {
+        await b.close();
+      }
       break;
     }
     default:
@@ -156,8 +166,8 @@ try {
           `origin: ${WEB_ORIGIN}`
       );
   }
-  process.exit(0);
+  process.exitCode = 0;
 } catch (err) {
   console.error("FAILED:", err.message);
-  process.exit(1);
+  process.exitCode = 1;
 }
