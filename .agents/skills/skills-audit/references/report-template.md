@@ -13,6 +13,10 @@ this). A reader must be able to tell which is which.
 path checks are skipped for a missing repo, not passed)*
 **Model currency:** `<live source queried>` — say which, and when
 
+If either app repo is absent or the live model source is unavailable, stop the
+healthy/action-required classification and report **Incomplete / human-review
+required** with the missing dependency. Deferred checks are not passes.
+
 ### 1. Mechanical findings
 
 Paste the script's own output or summarize it. Do not re-word warnings — they're
@@ -80,6 +84,12 @@ or
 
 > **Action required.** `<skill>` references a retired model (blocker) and
 > `<skill>` delegates to `<skill>` with an incompatible input contract (high).
+
+or
+
+> **Incomplete / human-review required.** `<missing sibling checkout or live
+> model source>` prevented required evidence from being collected. No healthy
+> verdict until the audit reruns with that dependency available.
 
 ### Allowlist review
 

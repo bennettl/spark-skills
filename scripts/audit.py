@@ -196,34 +196,40 @@ def check_skill_crossrefs(name, skill_dir, all_skills):
             if tok == name or tok in all_skills:
                 continue
             line = text[: m.start()].count("\n") + 1
-            if tok in PLANNED_SKILLS:
-                if tok not in seen:
-                    seen.add(tok)
-                    note(f"{rel(path)}:{line}: references planned skill '{tok}' (not built yet)")
-                continue
-            # Unknown token. Only consider ones shaped like a skill name — the
-            # registry is full of kebab-case tokens that are libraries, not skills.
-            if not SKILL_SHAPE.match(tok) or tok in seen:
-                continue
             token_line = lines[line - 1]
-            explicit_context = re.search(
+            direct_context = re.search(
                 r"\bdelegat(?:e|es|ed|ion)\b|\bhandoff\b|\bhand off\b",
                 token_line,
                 re.I,
-            ) or re.search(r"\bskill\b", token_line, re.I)
-            # Also accept the conventional list form, including one blank line:
-            # "Delegate to:" / "" / "- `callee`". A preceding sentence that
-            # already names a callee does not leak context into the next command.
+            )
+            explicit_context = direct_context or re.search(r"\bskill\b", token_line, re.I)
             if not explicit_context and re.match(r"\s*[-*+]\s+", token_line):
                 previous = line - 2
                 if previous >= 0 and not lines[previous].strip():
                     previous -= 1
                 if previous >= 0:
-                    explicit_context = re.search(
+                    list_context = re.search(
                         r"(?:delegat(?:e|es|ed|ion)|handoff|hand off)[^`]*:\s*$",
                         lines[previous],
                         re.I,
                     )
+                    direct_context = direct_context or list_context
+                    explicit_context = explicit_context or list_context
+            if tok in PLANNED_SKILLS:
+                if tok not in seen:
+                    seen.add(tok)
+                    if direct_context:
+                        fail(
+                            f"{rel(path)}:{line}: directly delegates to planned skill "
+                            f"'{tok}', which is not built"
+                        )
+                    else:
+                        note(f"{rel(path)}:{line}: references planned skill '{tok}' (not built yet)")
+                continue
+            # Unknown token. Only consider ones shaped like a skill name — the
+            # registry is full of kebab-case tokens that are libraries, not skills.
+            if not SKILL_SHAPE.match(tok) or tok in seen:
+                continue
             if not explicit_context:
                 continue
             close = difflib.get_close_matches(tok, sorted(KNOWN_SKILL_NAMES), n=1, cutoff=0.8)

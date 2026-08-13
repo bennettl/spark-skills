@@ -115,6 +115,9 @@ This is the periodic sweep.
 6. **Report.** Findings with `file:line`, a severity, and a fix direction, per
    `references/report-template.md`. Group mechanical findings (from the script)
    separately from judgment findings, so it's obvious which are reproducible.
+   If either sibling app checkout is unavailable, or the required live model
+   source cannot be reached, return **incomplete / human-review required** rather
+   than "registry healthy"; core evidence is missing and cannot be inferred.
 
 ## Guardrails
 
