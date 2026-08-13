@@ -12,6 +12,9 @@ comparable across runs.
 **Size:** spark-api 34 files (+2476/−2) · spark-web 29 files (+2039/−32)
 **Status:** `<both open, neither draft | one in active development — advisory only>`
 **Delegated:** `self-review` ×2 · `api-contract-check` on `<n>` endpoint(s)
+**Review boundary — API:** base `<ref>` @ `<base SHA>` · merge-base `<SHA>` · head `<SHA>`
+**Review boundary — web:** base `<ref>` @ `<base SHA>` · merge-base `<SHA>` · head `<SHA>`
+**Boundary revalidated:** `<timestamp>` — `<unchanged | moved; clearance discarded>`
 
 ### Verdict
 
@@ -23,7 +26,8 @@ comparable across runs.
 Rules: any blocker on either side blocks the **pair**. An unresolved ordering hazard
 blocks the pair even when both halves are individually clean. A half that is clean
 does not merge alone if landing it first breaks production. If the verdict differs
-per half, say which is cleared and which is blocked.
+per half, say which is cleared and which is blocked. If either review boundary
+moved, use **incomplete / human-review required** until the affected review reruns.
 
 ### Findings by origin
 
@@ -68,7 +72,10 @@ Ordered and executable, with verification between steps. See
    type — **destructive**, needs additive-then-migrate, not in-place.
 4. Verify: the new route returns `{ "data": … }`; the consumer logs a successful poll.
 5. Merge + deploy **spark-web #73**.
-6. Verify manually in the browser — spark-web has **no test framework**.
+6. Run the frontend checks discovered from the target branch's package scripts
+   and CI configuration, then perform any risk-specific browser verification.
+   Record the exact commands and results; if no automated check covers the
+   changed behavior, say so explicitly rather than assuming a fixed test setup.
 
 **Deploy window:** state it always, even when fine.
 

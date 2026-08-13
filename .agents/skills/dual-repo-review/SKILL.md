@@ -12,8 +12,9 @@ description: >-
   presence), and merge/deploy ordering under synchronize:true, including whether
   the backend stays backward-compatible with the old frontend during the deploy
   window and whether out-of-band prerequisites like queue setup must run first.
-  Emits one aggregate merge / do-not-merge verdict and a sequenced merge plan. It
-  reviews; it does not rewrite.
+  Revalidates both review boundaries, then emits one aggregate merge /
+  do-not-merge / incomplete verdict and a sequenced merge plan. It reviews; it
+  does not rewrite.
 metadata:
   supaclass-repos: [spark-api, spark-web]
   maturity: vertical-slice
@@ -56,6 +57,10 @@ retrospective; say so and scope to what's still actionable.
 ## Method
 
 1. **Establish the pair.** Find both halves and confirm they're the same feature.
+   Before reading either diff, capture an immutable review boundary for each
+   half: repo, PR/base ref, base SHA, merge-base SHA, and head SHA. Include both
+   tuples in the report and pass the matching root and boundary into delegated
+   reviews. A branch name alone is not a review boundary.
    **Do not match on name** — the repos don't agree: a backend `src/process-insight/`
    module pairs with a frontend `src/api/process-insights.ts`. Match on the
    **endpoint path** and the **feature vocabulary** in the diff. Then check pair
@@ -116,12 +121,16 @@ retrospective; say so and scope to what's still actionable.
      boots. A consumer registered against a queue that doesn't exist fails at
      runtime, not at build.
 
-6. **Aggregate and verdict.** Emit **one** report per
+6. **Revalidate, aggregate, and verdict.** Immediately before issuing a verdict,
+   resolve both boundary tuples again and compare them with the captured values.
+   If either base SHA, merge-base SHA, or head SHA moved, discard any clearance
+   and return **incomplete / human-review required** until the affected review is
+   rerun. Then emit **one** report per
    `references/report-template.md`: findings grouped by origin (spark-api,
    spark-web, seam, ordering), a sequenced merge plan, and a single
-   **merge / do-not-merge**. Any blocker on either side, or an unresolved ordering
-   hazard, blocks the pair — a half that is individually clean does not merge alone
-   if landing it first breaks production.
+   **merge / do-not-merge / incomplete** verdict. Any blocker on either side, or
+   an unresolved ordering hazard, blocks the pair — a half that is individually
+   clean does not merge alone if landing it first breaks production.
 
 ## Guardrails (the Supaclass-specific judgment)
 

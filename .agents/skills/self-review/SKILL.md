@@ -54,6 +54,12 @@ cross-repository failure modes checked here.
   orchestrator (`dual-repo-review`) invoke this skill per repo without changing
   the session's working directory; without it, a call from a third directory
   detects "neither" and degrades to stack-neutral checks only. The
+  target root is also the execution root for **every** repository read and Git
+  operation: use `git -C <repo-root> ...` (or change into the verified root)
+  for `rev-parse`, merge-base, diff, status, file enumeration, and file reads.
+  If the root is not a Git worktree or operations cannot be rooted there, return
+  **incomplete / human-review required** rather than inspecting the caller's
+  repository by accident. The
   `references/*-checks.md` files in this skill are the **source of
   truth** for the checklists; the repo's `AGENTS.md` "Code Review Rules" +
   "Non-obvious rules" are the confirmatory, possibly-newer overlay. Read
@@ -64,7 +70,9 @@ cross-repository failure modes checked here.
 
 ## Method
 
-1. **Get the diff.** Resolve the actual PR base ref/SHA as described above,
+1. **Get the diff.** First establish and verify the target repo root. Root every
+   Git command and source read there; an explicit target must never inherit the
+   caller's `HEAD`, status, or working tree. Resolve the actual PR base ref/SHA,
    compute its merge base with `HEAD`, and collect the changed file list + hunks
    (committed and uncommitted). Group by area (controller, entity, dto, api
    module, component, …) so checks map cleanly. State the exact base and head in
