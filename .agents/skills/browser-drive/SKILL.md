@@ -32,7 +32,9 @@ P0 bug. Both are things a driver catches in one run.
   here — they differ per developer, and this registry is shared. `node drive.mjs
   check` prints who is configured without revealing a password.
 
-  Ask the user for a password. Never invent one, and never hand-craft a JWT —
+  Never ask the user to paste a password into chat. Have them populate the
+  mode-0600 credentials file (or environment variables) locally without
+  revealing the value. Never invent a password or hand-craft a JWT —
   `LTI_JWT_SECRET` is the LTI path, not the app session.
 
   **A Google-SSO account has no password and never will.** `POST /users/login`
@@ -55,7 +57,7 @@ node drive.mjs import --from tokens.json          # adopt a browser session (SSO
 node drive.mjs check                              # is the cached session still good?
 node drive.mjs shot /assignments out.png          # authenticated full-page screenshot
 node drive.mjs text /assignments                  # content-free text metrics + page errors
-node drive.mjs run recipe.mjs --url /assignments  # multi-step interaction
+node drive.mjs run ~/.config/supaclass-driver/recipes/recipe.mjs --url /assignments
 node drive.mjs shot / out.png --who <staff-account>  # pick a non-default account
 node drive.mjs shot / out.png --headed            # watch it happen
 ```
@@ -109,7 +111,11 @@ every hour.
 
 ## Writing a recipe
 
-A recipe exports a function taking an already-authenticated browser:
+A recipe exports a function taking an already-authenticated browser. Recipes
+are executable Node code: never load one from the repository/PR under review.
+Create reviewer-authored recipes under
+`~/.config/supaclass-driver/recipes/`, with the directory mode 0700 and each
+`.mjs` file mode 0600; the CLI rejects every other location.
 
 ```js
 // recipe.mjs
@@ -122,7 +128,8 @@ export default async function (b) {
   await b.clickText("Submit");
   await b.waitForText("Submitted");            // verify AFTER the action
   await b.screenshot("/tmp/after-submit.png"); // this is the state that matters
-  console.log(await b.text());
+  const rendered = await b.text();
+  console.log({ submitted: rendered.includes("Submitted"), renderedCharacters: rendered.length });
 }
 ```
 

@@ -9,10 +9,20 @@
 //   run    <recipe.mjs> [--url PATH]       run a recipe against an authed browser
 //   check  [--who EMAIL]                   is the cached session still valid?
 import { pathToFileURL } from "node:url";
-import { resolve } from "node:path";
-import { closeSync, constants, fstatSync, openSync, readFileSync, unlinkSync } from "node:fs";
+import { isAbsolute, join, relative, resolve } from "node:path";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  unlinkSync,
+} from "node:fs";
 import {
   authedBrowser,
+  DRIVER_CONFIG_DIR,
   getCredentials,
   importSession,
   loginThroughUI,
@@ -53,9 +63,41 @@ const opts = { headless: !has("headed") };
 const reportEvents = (b) => {
   const bad = b.drain().filter((e) => e.kind !== "console" || /error/i.test(e.level));
   if (bad.length) {
-    console.log("\n--- page errors / failed requests ---");
-    for (const e of bad) console.log(JSON.stringify(e));
+    const summary = {
+      consoleErrors: bad.filter((e) => e.kind === "console").length,
+      pageErrors: bad.filter((e) => e.kind === "pageerror").length,
+      httpFailuresByStatus: {},
+    };
+    for (const e of bad.filter((event) => event.kind === "http"))
+      summary.httpFailuresByStatus[e.status] =
+        (summary.httpFailuresByStatus[e.status] ?? 0) + 1;
+    console.log("Page diagnostics (content redacted):", JSON.stringify(summary));
   }
+};
+
+const trustedRecipePath = (input) => {
+  const root = join(DRIVER_CONFIG_DIR, "recipes");
+  const rootStat = lstatSync(root);
+  if (rootStat.isSymbolicLink() || !rootStat.isDirectory() || (rootStat.mode & 0o077) !== 0)
+    throw new Error("Trusted recipe directory must be a real, private (0700) directory");
+  if (typeof process.getuid === "function" && rootStat.uid !== process.getuid())
+    throw new Error("Trusted recipe directory is owned by another user");
+  const candidate = resolve(input);
+  const candidateStat = lstatSync(candidate);
+  if (
+    candidateStat.isSymbolicLink() ||
+    !candidateStat.isFile() ||
+    (candidateStat.mode & 0o077) !== 0
+  )
+    throw new Error("Recipe must be a real, private (0600) file");
+  if (typeof process.getuid === "function" && candidateStat.uid !== process.getuid())
+    throw new Error("Recipe is owned by another user");
+  const rootReal = realpathSync(root);
+  const candidateReal = realpathSync(candidate);
+  const within = relative(rootReal, candidateReal);
+  if (!within || within.startsWith("..") || isAbsolute(within) || !candidateReal.endsWith(".mjs"))
+    throw new Error("Recipe must be an .mjs file inside the trusted reviewer recipe directory");
+  return candidateReal;
 };
 
 const readPrivateTokenFile = (path) => {
@@ -80,10 +122,8 @@ try {
       const b = await launch(opts);
       try {
         const tokens = await loginThroughUI(b, creds);
-        const path = writeSession(creds.email, tokens);
-        console.log(`Logged in as ${creds.email}`);
-        console.log(`Landed on ${await b.url()}`);
-        console.log(`Session cached at ${path} (mode 600)`);
+        writeSession(creds.email, tokens);
+        console.log("Login verified; session cached securely (mode 600)");
       } finally {
         await b.close();
       }
@@ -115,9 +155,7 @@ try {
           );
         }
         const info = await importSession({ ...tokens, who: flag("who") });
-        const who = [info.name, info.type].filter(Boolean).join(", ");
-        console.log(`Imported session for ${info.email}${who ? ` (${who})` : ""}`);
-        console.log(`Cached at ${info.path} (mode 600)`);
+        console.log("Imported session verified and cached securely (mode 600)");
         console.log(
           info.refreshToken
             ? "Refresh token present — this session will renew itself for the whole Cognito refresh window."
@@ -126,7 +164,7 @@ try {
       } finally {
         if (shredAfterRead) {
           unlinkSync(fromPath);
-          console.log(`Deleted ${fromPath}`);
+          console.log("Deleted imported token file");
         }
       }
       break;
@@ -135,11 +173,11 @@ try {
       const creds = getCredentials(flag("who"));
       const s = readSession(creds.email);
       if (!s) {
-        console.log(`No cached session for ${creds.email}`);
+        console.log("No cached session for the selected account");
       } else {
         const ok = await tokenIsValid(s.accessToken, creds.email);
         console.log(
-          `${creds.email}: cached ${s.savedAt} — access token ${ok ? "VALID" : "stale (will refresh or re-login)"}`
+          `Selected account: cached session access token ${ok ? "VALID" : "stale (will refresh or re-login)"}`
         );
       }
       break;
@@ -150,9 +188,8 @@ try {
       const b = await authedBrowser({ who: flag("who"), url, ...opts });
       try {
         await b.screenshot(resolve(out));
-        console.log(`authenticated as ${b.account.email} via ${b.how}`);
-        console.log(`URL: ${await b.url()}`);
-        console.log(`Wrote ${resolve(out)}`);
+        console.log(`Authenticated session established via ${b.how}`);
+        console.log("Private screenshot written (mode 600)");
         reportEvents(b);
       } finally {
         await b.close();
@@ -163,7 +200,6 @@ try {
       const [url] = positional;
       const b = await authedBrowser({ who: flag("who"), url: url ?? "/", ...opts });
       try {
-        console.log(`URL: ${await b.url()}\n`);
         const rendered = await b.text();
         console.log(
           `Rendered text: ${rendered.length} characters across ${rendered.split(/\r?\n/).length} lines ` +
@@ -178,9 +214,10 @@ try {
     case "run": {
       const [recipe] = positional;
       if (!recipe) throw new Error("usage: run <recipe.mjs>");
+      const trustedRecipe = trustedRecipePath(recipe);
       const b = await authedBrowser({ who: flag("who"), url: flag("url", "/"), ...opts });
       try {
-        const mod = await import(pathToFileURL(resolve(recipe)).href);
+        const mod = await import(pathToFileURL(trustedRecipe).href);
         await (mod.default ?? mod.run)(b);
         reportEvents(b);
       } finally {

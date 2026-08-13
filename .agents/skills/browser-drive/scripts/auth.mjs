@@ -16,9 +16,11 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  renameSync,
   writeFileSync,
+  unlinkSync,
 } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { launch } from "./cdp.mjs";
@@ -48,7 +50,8 @@ export const API_ORIGIN = trustedLocalOrigin(
   process.env.SUPACLASS_API_ORIGIN ?? "http://localhost:3002"
 );
 
-const CONFIG_DIR = process.env.SUPACLASS_DRIVER_CONFIG_DIR ?? join(homedir(), ".config", "supaclass-driver");
+export const DRIVER_CONFIG_DIR =
+  process.env.SUPACLASS_DRIVER_CONFIG_DIR ?? join(homedir(), ".config", "supaclass-driver");
 
 const normalizeEmail = (s) => s.trim().toLowerCase();
 const authRequestSignal = () => AbortSignal.timeout(10000);
@@ -82,7 +85,7 @@ export function getCredentials(who) {
   if (process.env.SUPACLASS_EMAIL && process.env.SUPACLASS_PASSWORD && !who) {
     return { email: process.env.SUPACLASS_EMAIL, password: process.env.SUPACLASS_PASSWORD };
   }
-  const path = join(CONFIG_DIR, "creds.json");
+  const path = join(DRIVER_CONFIG_DIR, "creds.json");
   if (!existsSync(path)) {
     throw new Error(
       `No credentials. Either export SUPACLASS_EMAIL and SUPACLASS_PASSWORD, or create ${path}:\n` +
@@ -121,7 +124,7 @@ export async function importSession({ accessToken, refreshToken, who }) {
   return { email, path, name: [me?.firstName, me?.lastName].filter(Boolean).join(" "), type: me?.type, refreshToken };
 }
 
-const sessionPath = (email) => join(CONFIG_DIR, `session-${sessionKey(email)}.json`);
+const sessionPath = (email) => join(DRIVER_CONFIG_DIR, `session-${sessionKey(email)}.json`);
 
 export function readSession(email) {
   const p = sessionPath(email);
@@ -134,16 +137,40 @@ export function readSession(email) {
 }
 
 export function writeSession(email, tokens) {
-  mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
-  const configStat = lstatSync(CONFIG_DIR);
+  mkdirSync(DRIVER_CONFIG_DIR, { recursive: true, mode: 0o700 });
+  const configStat = lstatSync(DRIVER_CONFIG_DIR);
   if (configStat.isSymbolicLink() || !configStat.isDirectory())
-    throw new Error(`Refusing to store a session in a non-directory or symlink: ${CONFIG_DIR}`);
+    throw new Error("Refusing to store a session in a non-directory or symlinked config path");
   if (typeof process.getuid === "function" && configStat.uid !== process.getuid())
-    throw new Error(`Refusing to store a session in ${CONFIG_DIR}: directory is owned by another user`);
-  chmodSync(CONFIG_DIR, 0o700);
+    throw new Error("Refusing to store a session in a config directory owned by another user");
+  chmodSync(DRIVER_CONFIG_DIR, 0o700);
   const p = sessionPath(email);
-  writeFileSync(p, JSON.stringify({ email, ...tokens, savedAt: new Date().toISOString() }, null, 2));
-  chmodSync(p, 0o600);
+  const tmp = join(DRIVER_CONFIG_DIR, `.session-${randomUUID()}.tmp`);
+  let fd;
+  try {
+    fd = openSync(
+      tmp,
+      constants.O_WRONLY |
+        constants.O_CREAT |
+        constants.O_EXCL |
+        (constants.O_NOFOLLOW ?? 0),
+      0o600
+    );
+    writeFileSync(
+      fd,
+      JSON.stringify({ email, ...tokens, savedAt: new Date().toISOString() }, null, 2)
+    );
+    closeSync(fd);
+    fd = undefined;
+    chmodSync(tmp, 0o600);
+    // Atomic replacement changes the directory entry itself; an existing
+    // session-path symlink is replaced, never followed to its target.
+    renameSync(tmp, p);
+    chmodSync(p, 0o600);
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+    if (existsSync(tmp)) unlinkSync(tmp);
+  }
   return p;
 }
 

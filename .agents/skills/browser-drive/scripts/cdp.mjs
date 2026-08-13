@@ -205,13 +205,27 @@ export class Browser {
     return this;
   }
 
-  _connect(wsUrl) {
+  _connect(wsUrl, handshakeTimeout = 10000) {
     return new Promise((resolve, reject) => {
       this.ws = new WebSocket(wsUrl);
       this.handlers = new Map();
-      this.ws.onopen = () => resolve();
-      this.ws.onerror = (e) => reject(new Error("ws error: " + e.message));
+      let connected = false;
+      const handshakeTimer = setTimeout(() => {
+        this.ws.close();
+        reject(new Error("CDP WebSocket handshake timed out"));
+      }, handshakeTimeout);
+      this.ws.onopen = () => {
+        connected = true;
+        clearTimeout(handshakeTimer);
+        resolve();
+      };
+      this.ws.onerror = (e) => {
+        clearTimeout(handshakeTimer);
+        reject(new Error("ws error: " + e.message));
+      };
       this.ws.onclose = () => {
+        clearTimeout(handshakeTimer);
+        if (!connected) reject(new Error("CDP WebSocket closed during handshake"));
         for (const { reject: rejectPending, timer } of this.pending.values()) {
           clearTimeout(timer);
           rejectPending(new Error("CDP websocket closed"));
