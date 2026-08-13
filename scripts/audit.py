@@ -191,6 +191,7 @@ def check_skill_crossrefs(name, skill_dir, all_skills):
         text = read(path)
         lines = text.splitlines()
         seen = set()
+        direct_failures = set()
         for m in BACKTICKED.finditer(text):
             tok = m.group(1).strip()
             if tok == name or tok in all_skills:
@@ -199,7 +200,7 @@ def check_skill_crossrefs(name, skill_dir, all_skills):
             token_line = lines[line - 1]
             direct_callees = re.findall(
                 r"(?:delegat(?:e|es|ed|ing|ion)|handoff|hand off)\s+"
-                r"(?:directly\s+)?(?:to\s+)?`([^`]+)`",
+                r"(?:directly\s+)?(?:to\s+)?(?:[*_~]+)?`([^`]+)`",
                 token_line,
                 re.I,
             )
@@ -219,27 +220,28 @@ def check_skill_crossrefs(name, skill_dir, all_skills):
                     direct_context = bool(list_context and bullet_callees and bullet_callees[0] == tok)
                     explicit_context = explicit_context or direct_context
             if tok in PLANNED_SKILLS:
-                if tok not in seen:
+                if direct_context and tok not in direct_failures:
+                    direct_failures.add(tok)
+                    fail(
+                        f"{rel(path)}:{line}: directly delegates to planned skill "
+                        f"'{tok}', which is not built"
+                    )
+                elif not direct_context and tok not in seen:
                     seen.add(tok)
-                    if direct_context:
-                        fail(
-                            f"{rel(path)}:{line}: directly delegates to planned skill "
-                            f"'{tok}', which is not built"
-                        )
-                    else:
-                        note(f"{rel(path)}:{line}: references planned skill '{tok}' (not built yet)")
+                    note(f"{rel(path)}:{line}: references planned skill '{tok}' (not built yet)")
                 continue
             # Unknown token. Only consider ones shaped like a skill name — the
             # registry is full of kebab-case tokens that are libraries, not skills.
-            if not SKILL_SHAPE.match(tok) or tok in seen:
+            if not SKILL_SHAPE.match(tok):
                 continue
             if direct_context:
-                seen.add(tok)
-                fail(
-                    f"{rel(path)}:{line}: directly delegates to missing skill '{tok}'"
-                )
+                if tok not in direct_failures:
+                    direct_failures.add(tok)
+                    fail(
+                        f"{rel(path)}:{line}: directly delegates to missing skill '{tok}'"
+                    )
                 continue
-            if not explicit_context:
+            if not explicit_context or tok in seen:
                 continue
             close = difflib.get_close_matches(tok, sorted(KNOWN_SKILL_NAMES), n=1, cutoff=0.8)
             if close:
