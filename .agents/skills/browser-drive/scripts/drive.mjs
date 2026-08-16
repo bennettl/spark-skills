@@ -119,14 +119,21 @@ const trustedRecipePath = (input) => {
 };
 
 const readPrivateTokenFile = (path) => {
-  const fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  let fd;
+  try {
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  } catch {
+    // Node's own open error (e.g. ELOOP for a symlink) embeds the resolved
+    // path; never let that reach stdout/a transcript.
+    throw new Error("Token import path could not be opened (symlink or inaccessible)");
+  }
   try {
     const st = fstatSync(fd);
-    if (!st.isFile()) throw new Error(`Token import path is not a regular file: ${path}`);
+    if (!st.isFile()) throw new Error("Token import path is not a regular file");
     if (typeof process.getuid === "function" && st.uid !== process.getuid())
-      throw new Error(`Token import file is owned by another user: ${path}`);
+      throw new Error("Token import file is owned by another user");
     if ((st.mode & 0o077) !== 0)
-      throw new Error(`Token import file must have mode 0600 or stricter: ${path}`);
+      throw new Error("Token import file must have mode 0600 or stricter");
     return readFileSync(fd, "utf8");
   } finally {
     closeSync(fd);

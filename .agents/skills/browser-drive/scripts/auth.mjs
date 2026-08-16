@@ -7,12 +7,11 @@
 // We never mint a token. The cache only ever holds tokens the app itself
 // issued in response to a real credential submission.
 import {
-  chmodSync,
   closeSync,
   constants,
   existsSync,
+  fchmodSync,
   fstatSync,
-  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -37,7 +36,7 @@ const trustedLocalOrigin = (label, value) => {
     url.search ||
     url.hash
   )
-    throw new Error(`${label} must be a root HTTP(S) loopback origin; refusing to expose credentials to ${value}`);
+    throw new Error(`${label} must be a root HTTP(S) loopback origin; refusing to expose credentials elsewhere (value redacted)`);
   return url.origin;
 };
 
@@ -59,7 +58,14 @@ const sessionKey = (email) =>
   createHash("sha256").update(normalizeEmail(email), "utf8").digest("hex");
 
 const readPrivateConfig = (path) => {
-  const fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  let fd;
+  try {
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  } catch {
+    // Node's own open error (e.g. ELOOP for a symlink) embeds the resolved
+    // path; never let that reach stdout/a transcript.
+    throw new Error("Sensitive config was rejected: could not be opened (symlink or inaccessible)");
+  }
   try {
     const st = fstatSync(fd);
     if (!st.isFile()) throw new Error("Sensitive config was rejected: not a regular file");
@@ -134,12 +140,28 @@ export function readSession(email) {
 
 export function writeSession(email, tokens) {
   mkdirSync(DRIVER_CONFIG_DIR, { recursive: true, mode: 0o700 });
-  const configStat = lstatSync(DRIVER_CONFIG_DIR);
-  if (configStat.isSymbolicLink() || !configStat.isDirectory())
-    throw new Error("Refusing to store a session in a non-directory or symlinked config path");
-  if (typeof process.getuid === "function" && configStat.uid !== process.getuid())
-    throw new Error("Refusing to store a session in a config directory owned by another user");
-  chmodSync(DRIVER_CONFIG_DIR, 0o700);
+  // Check and chmod through one open descriptor rather than a path lookup
+  // followed by a second path lookup: a path-based lstat-then-chmodSync pair
+  // leaves a window where another local user can swap the directory entry for
+  // a symlink in between, and chmodSync on the resulting path would follow it
+  // onto an unrelated target. O_NOFOLLOW makes the open itself fail closed on
+  // a symlink, and fchmodSync acts on the verified descriptor, not the path.
+  let dirFd;
+  try {
+    dirFd = openSync(DRIVER_CONFIG_DIR, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  } catch {
+    throw new Error("Refusing to store a session: config path could not be opened (symlink or inaccessible)");
+  }
+  try {
+    const configStat = fstatSync(dirFd);
+    if (!configStat.isDirectory())
+      throw new Error("Refusing to store a session in a non-directory config path");
+    if (typeof process.getuid === "function" && configStat.uid !== process.getuid())
+      throw new Error("Refusing to store a session in a config directory owned by another user");
+    fchmodSync(dirFd, 0o700);
+  } finally {
+    closeSync(dirFd);
+  }
   const p = sessionPath(email);
   const tmp = join(DRIVER_CONFIG_DIR, `.session-${randomUUID()}.tmp`);
   let fd;
