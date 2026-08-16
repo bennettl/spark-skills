@@ -22,6 +22,15 @@ State it explicitly anyway, because there are real exceptions:
 - **A removal.** Deleting a route or field inverts the order: the **frontend** must
   stop calling it first, then the backend removes it. Getting this backwards is a
   guaranteed production error, and it's the single most common ordering mistake.
+  **Frontend-first ordering alone is not clearance.** A user with an
+  already-loaded old SPA bundle keeps calling the removed route/field after the
+  backend deploys — there is no forced-reload mechanism, so that session sees
+  production errors regardless of deploy order. Require one of: (a) the backend
+  keeps serving the old route/field for a stated deprecation window after the
+  frontend deploy, removed only in a later deploy once the window has passed, or
+  (b) explicit evidence old clients cannot remain (e.g. a breaking change already
+  gated behind a forced-logout/version check). Absent either, flag the removal as
+  an ordering hazard and do not clear the pair on ordering alone.
 
 ## 2. What does the backend deploy mutate?
 
