@@ -74,7 +74,8 @@ following is *documented* (Claude). Full reasoning:
 
 Foundation, built next (one PR each): `domain-audit` (detect a business rule
 re-derived across N surfaces), `git-commit`, and `nestjs-module` + `api-hook`
-scaffolding.
+scaffolding. Also named as future work elsewhere in the registry: `authz-audit`
+(app-repo authorization/security review — scope not yet defined).
 
 The application repos now have initial build CI and Codex GitHub review enabled.
 The reviewer remains advisory while it is evaluated under

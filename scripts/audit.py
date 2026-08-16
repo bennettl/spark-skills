@@ -73,6 +73,8 @@ BACKTICKED = re.compile(r"`([^`\n]+)`")
 LINE_SUFFIX = re.compile(r":\d+(-\d+)?$")
 # Shaped like a skill name: kebab-case, lowercase, no dots/slashes/spaces.
 SKILL_SHAPE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)+$")
+README_ROADMAP_HEADING = re.compile(r"^###\s+Roadmap\s*$", re.M)
+NEXT_HEADING = re.compile(r"^##\s", re.M)
 
 # Counts that are true on the day they're written and rot on the next merge.
 EXPIRING = [
@@ -171,6 +173,33 @@ def verified_app_repo(name, path):
     if not expected_origin.match(normalized_origin):
         return None
     return head
+
+
+def load_planned_skills():
+    """Skills named as future work, sourced from the README's own Roadmap
+    section — not a second, hand-maintained roster in this script.
+
+    A hardcoded list here drifts from the roadmap the moment either changes:
+    a shipped or dropped roadmap item keeps being treated as "legitimately
+    planned" (or starts being flagged as unknown) with nothing to catch it.
+    Reading the roadmap directly means there is exactly one place that status
+    lives, and this script always sees the current one.
+    """
+    readme = os.path.join(ROOT, "README.md")
+    if not os.path.isfile(readme):
+        return set()
+    text = read(readme)
+    heading = README_ROADMAP_HEADING.search(text)
+    if not heading:
+        return set()
+    rest = text[heading.end():]
+    next_heading = NEXT_HEADING.search(rest)
+    section = rest[: next_heading.start()] if next_heading else rest
+    return {
+        tok.strip()
+        for tok in BACKTICKED.findall(section)
+        if SKILL_SHAPE.match(tok.strip())
+    }
 
 
 def load_allowed_paths():
@@ -486,11 +515,10 @@ def main():
 
     global KNOWN_SKILL_NAMES, PLANNED_SKILLS
     # Roadmap skills. A prose reference to one is a forward reference, not a
-    # broken link — keep this in sync as they get built or dropped.
-    PLANNED_SKILLS = {
-        "preflight", "open-pr", "authz-audit", "issue-refine", "smoke-test",
-        "domain-audit", "nestjs-module", "api-hook", "git-commit",
-    }
+    # broken link. Sourced from README.md's Roadmap section (see
+    # load_planned_skills) so this roster cannot drift from the one place
+    # that status is actually declared.
+    PLANNED_SKILLS = load_planned_skills()
     KNOWN_SKILL_NAMES = set(skills) | PLANNED_SKILLS
 
     global ALLOWED_PATHS
