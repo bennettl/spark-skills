@@ -191,6 +191,17 @@ def check_reference_integrity(name, skill_dir):
     cited = set(re.findall(r"references/([A-Za-z0-9._/-]+\.md)", body))
 
     ref_dir = os.path.join(skill_dir, "references")
+    ref_root_real = os.path.realpath(ref_dir)
+    skill_dir_real = os.path.realpath(skill_dir)
+    if os.path.isdir(ref_dir) and os.path.commonpath((skill_dir_real, ref_root_real)) != skill_dir_real:
+        # references/ itself is a symlink (or contains one) that resolves
+        # outside the canonical skill directory: every file "beneath" it is
+        # actually foreign material that disappears in another checkout or
+        # installation, no matter how clean the per-file containment below
+        # looks — that check inherits the same escaped root.
+        fail(f"{name}: references/ resolves outside the skill directory (symlink escape)")
+        return
+
     on_disk = set()
     if os.path.isdir(ref_dir):
         on_disk = {
@@ -200,7 +211,6 @@ def check_reference_integrity(name, skill_dir):
             if f.endswith(".md")
         }
 
-    ref_root_real = os.path.realpath(ref_dir)
     for ref in sorted(cited):
         candidate = os.path.abspath(os.path.join(ref_dir, ref))
         candidate_real = os.path.realpath(candidate)
@@ -308,12 +318,40 @@ def candidate_paths(text):
         yield m, tok
 
 
-def check_repo_paths(name, skill_dir, available):
+def path_in_head_tree(repo_root, head, relpath):
+    """True if `relpath` is a real entry in the repo's recorded HEAD tree.
+
+    Deliberately not a filesystem check. `os.path.exists()` on a joined path
+    would (a) follow a symlink that resolves outside the repo and report
+    whatever it happens to find there as "verified", and (b) treat an
+    untracked or uncommitted working-tree file as evidence about what the
+    verified HEAD SHA actually contains. `git cat-file -e <head>:<relpath>`
+    resolves strictly inside the tree object graph — it cannot walk through a
+    symlink to escape the repo, and it only sees committed content.
+    """
+    try:
+        subprocess.run(
+            ["git", "-C", repo_root, "cat-file", "-e", f"{head}:{relpath}"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return True
+    except (OSError, subprocess.CalledProcessError):
+        return False
+
+
+def check_repo_paths(name, skill_dir, verified):
     """Do the app-repo paths this skill names still exist?
 
     This is the check that has caught the most real defects: a dead
     docs/credit-reservation.md, a scripts/setup-queue.sh that lived only on an
     unmerged branch. A wrong path reads as verified, which is worse than silence.
+
+    `verified` maps repo name -> (repo_root, head_sha) for repos already
+    confirmed by `verified_app_repo` to be the expected Git checkout at a
+    readable HEAD. Presence is checked against that HEAD's tree (see
+    `path_in_head_tree`), never the working tree.
     """
     for path in md_files(skill_dir):
         if os.path.basename(path) in EXEMPT_BASENAMES:
@@ -336,23 +374,19 @@ def check_repo_paths(name, skill_dir, available):
             if (rel(path), tok) in ALLOWED_PATHS:
                 continue
             # A token may belong to the missing sibling. Until both app repos
-            # are available, a negative conclusion is ambiguous; keep local
+            # are verified, a negative conclusion is ambiguous; keep local
             # registry-path checks above, but skip app-path absence warnings.
-            if set(available) != set(APP_REPOS):
+            if set(verified) != set(APP_REPOS):
                 continue
             found = False
-            for repo_root in available.values():
-                candidate = os.path.abspath(os.path.join(repo_root, tok))
-                if (
-                    os.path.commonpath((repo_root, candidate)) == repo_root
-                    and os.path.exists(candidate)
-                ):
+            for repo_root, head in verified.values():
+                if path_in_head_tree(repo_root, head, tok):
                     found = True
                     break
             if not found:
                 line = text[: m.start()].count("\n") + 1
-                where = " or ".join(sorted(available))
-                warn(f"{rel(path)}:{line}: path '{tok}' not found in {where}")
+                where = " or ".join(sorted(verified))
+                warn(f"{rel(path)}:{line}: path '{tok}' not found in {where}'s HEAD tree")
 
 
 def check_expiring_facts(name, skill_dir):
@@ -437,14 +471,14 @@ def main():
         for name, path in APP_REPOS.items()
         if os.path.isdir(path)
     }
-    available = {
-        name: APP_REPOS[name]
+    verified = {
+        name: (APP_REPOS[name], head)
         for name, head in repo_heads.items()
         if head is not None
     }
-    for name in sorted(available):
-        note(f"{name} verified at {repo_heads[name]}")
-    missing_repos = sorted(set(APP_REPOS) - set(available))
+    for name in sorted(verified):
+        note(f"{name} verified at {verified[name][1]}")
+    missing_repos = sorted(set(APP_REPOS) - set(verified))
     if missing_repos:
         note(
             "app-path absence verification fully deferred until both expected "
@@ -455,7 +489,7 @@ def main():
     for name, skill_dir in skills.items():
         check_reference_integrity(name, skill_dir)
         check_skill_crossrefs(name, skill_dir, skills)
-        check_repo_paths(name, skill_dir, available)
+        check_repo_paths(name, skill_dir, verified)
         check_expiring_facts(name, skill_dir)
     check_ownership(skills)
 
@@ -467,7 +501,7 @@ def main():
         print(f"FAIL  {e}")
 
     print(
-        f"\nAudited {len(skills)} skill(s) with {len(available)} app repo(s) available: "
+        f"\nAudited {len(skills)} skill(s) with {len(verified)} app repo(s) available: "
         f"{len(errors)} error(s), {len(warnings)} warning(s)."
     )
     return 1 if errors else 0
