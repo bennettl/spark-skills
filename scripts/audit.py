@@ -99,6 +99,13 @@ OWNERSHIP_THRESHOLD = 2
 # the same paragraph — so match within a window of lines around each hit.
 DEFERS = re.compile(r"\bowns?\b|\bdefer|\bdelegate|\bwins\b|\bauthoritative\b", re.I)
 DEFER_WINDOW = 6
+# A deferral keyword alone is not a tie-break: "the authoritative request
+# contract is the DTO" and "5. Own the ordering" both match DEFERS but name no
+# other skill, so they are not evidence that *this* fact has a declared owner.
+# A real tie-break names who wins — require another registry skill's name
+# within a tight sub-window of the keyword itself, not just somewhere in the
+# broad paragraph-level window around the fact.
+DEFER_NAME_WINDOW = 3
 
 errors, warnings, notes = [], [], []
 
@@ -415,9 +422,16 @@ def check_expiring_facts(name, skill_dir):
 
 def check_ownership(skills):
     """One fact authored in many skills is how copies drift apart."""
+    all_names = set(skills)
     for label, pat in CORE_FACTS:
         holders = {}
         for name, skill_dir in skills.items():
+            other_names = all_names - {name}
+            name_pat = (
+                re.compile(r"\b(?:" + "|".join(re.escape(n) for n in other_names) + r")\b")
+                if other_names
+                else None
+            )
             hits = 0
             defers = False
             for path in md_files(skill_dir):
@@ -429,8 +443,19 @@ def check_ownership(skills):
                     # Deferral is usually a nearby sentence, not the same line.
                     lo = max(0, i - DEFER_WINDOW)
                     hi = min(len(lines), i + DEFER_WINDOW + 1)
-                    if DEFERS.search("\n".join(lines[lo:hi])):
-                        defers = True
+                    for j in range(lo, hi):
+                        if not DEFERS.search(lines[j]):
+                            continue
+                        # A deferral keyword alone ("owns", "authoritative",
+                        # "wins") is not a tie-break — it must name the other
+                        # skill that owns this fact, within a tight window of
+                        # the keyword itself, or it's just prose that happens
+                        # to contain the word.
+                        name_lo = max(0, j - DEFER_NAME_WINDOW)
+                        name_hi = min(len(lines), j + DEFER_NAME_WINDOW + 1)
+                        if name_pat and name_pat.search("\n".join(lines[name_lo:name_hi])):
+                            defers = True
+                            break
             if hits:
                 holders[name] = (hits, defers)
         if len(holders) > OWNERSHIP_THRESHOLD:
