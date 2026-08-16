@@ -253,8 +253,15 @@ def check_skill_crossrefs(name, skill_dir, all_skills):
             direct_context = tok in {callee.strip() for callee in direct_callees}
             explicit_context = direct_context or bool(re.search(r"\bskill\b", token_line, re.I))
             if not direct_context and re.match(r"\s*[-*+]\s+", token_line):
+                # Walk back over the *entire* contiguous list (and blank
+                # lines), not just the immediately preceding bullet — a
+                # second or later item under "Delegate to:" is still under
+                # that same header even though its own predecessor is a
+                # sibling bullet, not the header itself.
                 previous = line - 2
-                if previous >= 0 and not lines[previous].strip():
+                while previous >= 0 and (
+                    not lines[previous].strip() or re.match(r"\s*[-*+]\s+", lines[previous])
+                ):
                     previous -= 1
                 if previous >= 0:
                     list_context = re.search(
