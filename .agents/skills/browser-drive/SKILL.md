@@ -247,10 +247,13 @@ interaction is a click, a keystroke, or a screenshot.
 
 ## Recipe: is this empty page a bug or the fixture?
 
-Answers it with evidence instead of a guess. Adapt the URL.
+Answers it with evidence instead of a guess. Adapt the URL. Save this as
+`~/.config/supaclass-driver/recipes/why-empty.mjs` (mode 0600) — `run` rejects
+recipes outside that trusted directory.
 
 ```js
-// why-empty.mjs — node drive.mjs run why-empty.mjs --who <account>
+// ~/.config/supaclass-driver/recipes/why-empty.mjs
+// node drive.mjs run ~/.config/supaclass-driver/recipes/why-empty.mjs --who <account>
 export default async function (b) {
   const calls = [];
   b.on("Network.responseReceived", (p) => {
