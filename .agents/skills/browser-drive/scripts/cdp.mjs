@@ -633,7 +633,13 @@ export async function launch(opts) {
   try {
     return await browser.launch();
   } catch (err) {
-    await browser.close().catch(() => {});
+    try {
+      await browser.close();
+    } catch (cleanupErr) {
+      throw new Error("Chrome launch failed and profile cleanup also failed", {
+        cause: new AggregateError([err, cleanupErr]),
+      });
+    }
     throw err;
   }
 }
