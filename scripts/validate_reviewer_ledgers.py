@@ -278,11 +278,15 @@ def main():
                 f"{FINDING_LEDGER}: {f['finding_id']} has cross_reviewer_status="
                 f"{status!r} but no matched_finding_id"
             )
-        if status in {"duplicate_confirmed", "duplicate_rejected"} and not f.get("adjudicated_by"):
-            warn(
+        if status in {"corroborated", "duplicate_confirmed", "duplicate_rejected"} and not f.get(
+            "adjudicated_by"
+        ):
+            fail(
                 f"{FINDING_LEDGER}: {f['finding_id']}.cross_reviewer_status="
-                f"{status!r} but adjudicated_by is blank — a match verdict "
-                "should carry who confirmed it"
+                f"{status!r} but adjudicated_by is blank — multi-reviewer-"
+                "matching.md requires the same maintainer sign-off for all "
+                "three of these statuses, never set from the matcher's "
+                "proposal alone"
             )
 
     # --- seed ledger checks ---
