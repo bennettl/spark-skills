@@ -16,6 +16,8 @@ import os
 import sys
 from collections import Counter, defaultdict
 
+from _validation_common import Reporter
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 META = os.path.join(ROOT, "meta")
 
@@ -63,16 +65,15 @@ ADJUDICATION_VALUES = {
 # being added is expected; typos in an existing one are not.
 KNOWN_REVIEWER_TOOLS = {"codex", "claude", "human"}
 
-errors = []
-warnings = []
+_reporter = Reporter()
 
 
 def fail(msg):
-    errors.append(msg)
+    _reporter.fail(msg)
 
 
 def warn(msg):
-    warnings.append(msg)
+    _reporter.warn(msg)
 
 
 def read_rows(path):
@@ -162,6 +163,8 @@ def main():
             "cross_reviewer_status",
             "adjudication",
             "reviewer_tool",
+            "root_cause_key",
+            "matched_finding_id",
         ],
     )
 
@@ -249,16 +252,30 @@ def main():
                 f"({[a['attempt_id'] for a in group]}) — must be exactly one"
             )
 
-        # canonical must be the LATEST completed attempt on the boundary, not
-        # merely "the one flagged" — multi-reviewer-matching.md defines it as
-        # "the last completed review". "Completed" here means the same
-        # outcome-without-non_completion_reason test used above.
+        # canonical must itself be a completed review, and must be the LATEST
+        # completed attempt on the boundary — multi-reviewer-matching.md
+        # defines canonical as "the last completed review". Neither the
+        # zero-canonical check above nor the recency check below catches a
+        # boundary whose only attempt is a non-completion (e.g.
+        # quota_exhausted) flagged canonical anyway: the zero-canonical
+        # branch only fires when canonical_ids is empty, and the recency
+        # comparison below only runs when `completed` is non-empty — a
+        # quota-exhausted-only boundary has neither.
         completed = [
             a for a in group
             if a.get("outcome") and not a.get("non_completion_reason") and a.get("completed_at")
         ]
-        if len(canonical_ids) == 1 and completed:
+        if len(canonical_ids) == 1:
             canonical_row = next(a for a in group if a["attempt_id"] == canonical_ids[0])
+            if canonical_row.get("non_completion_reason"):
+                fail(
+                    f"{ATTEMPT_LEDGER}: boundary {key} marks {canonical_ids[0]} "
+                    f"canonical but it has non_completion_reason="
+                    f"{canonical_row.get('non_completion_reason')!r} set — "
+                    "canonical must be a completed review, not one that "
+                    "never ran"
+                )
+        if len(canonical_ids) == 1 and completed:
             latest = max(completed, key=lambda a: a["completed_at"])
             if canonical_row.get("completed_at") < latest["completed_at"]:
                 fail(
@@ -293,6 +310,17 @@ def main():
                 f"{f.get('reviewer_tool')!r} does not match parent attempt "
                 f"{aid}.reviewer_tool={parent.get('reviewer_tool')!r}"
             )
+        if f.get("source") == "human" and parent.get("reviewer_tool") != "human":
+            # multi-reviewer-matching.md: a human finding attaches to a
+            # synthetic reviewer_tool=human attempt "rather than being
+            # exempted from the invariant" — specifically so it can't be
+            # silently pooled into a real reviewer's metrics via a mismatched
+            # parent attempt.
+            fail(
+                f"{FINDING_LEDGER}: {f['finding_id']} has source='human' but "
+                f"parent attempt {aid}.reviewer_tool="
+                f"{parent.get('reviewer_tool')!r} != 'human'"
+            )
         mid = f.get("matched_finding_id", "")
         if mid:
             if mid == f["finding_id"]:
@@ -323,6 +351,15 @@ def main():
                 f"{FINDING_LEDGER}: {f['finding_id']} has cross_reviewer_status="
                 f"{status!r} but no matched_finding_id"
             )
+        if status == "unique" and mid:
+            # "unique" is documented as "no candidate match was proposed" —
+            # a non-blank matched_finding_id contradicts that regardless of
+            # whether the target's root_cause_key happens to agree.
+            fail(
+                f"{FINDING_LEDGER}: {f['finding_id']} has cross_reviewer_status="
+                "'unique' but a non-blank matched_finding_id "
+                f"({mid!r}) — unique means no match was proposed"
+            )
         if status in {"corroborated", "duplicate_confirmed", "duplicate_rejected"} and not f.get(
             "adjudicated_by"
         ):
@@ -332,6 +369,35 @@ def main():
                 "matching.md requires the same maintainer sign-off for all "
                 "three of these statuses, never set from the matcher's "
                 "proposal alone"
+            )
+
+    # corroborated <-> duplicate_confirmed must pair up: a primary is only
+    # "corroborated" if some other finding actually points at it as a
+    # confirmed duplicate, and a "duplicate_confirmed" finding's target must
+    # itself be marked corroborated — otherwise the two statuses assert
+    # contradictory things about the same relationship.
+    confirmed_duplicate_targets = {
+        f.get("matched_finding_id")
+        for f in findings
+        if f.get("cross_reviewer_status") == "duplicate_confirmed" and f.get("matched_finding_id")
+    }
+    for f in findings:
+        status = f.get("cross_reviewer_status", "")
+        if status == "duplicate_confirmed":
+            target = findings_by_id.get(f.get("matched_finding_id"))
+            if target is not None and target.get("cross_reviewer_status") != "corroborated":
+                fail(
+                    f"{FINDING_LEDGER}: {f['finding_id']} is "
+                    "'duplicate_confirmed' against "
+                    f"{f.get('matched_finding_id')!r}, but that finding's "
+                    f"cross_reviewer_status is {target.get('cross_reviewer_status')!r}, "
+                    "not 'corroborated'"
+                )
+        if status == "corroborated" and f["finding_id"] not in confirmed_duplicate_targets:
+            fail(
+                f"{FINDING_LEDGER}: {f['finding_id']} is 'corroborated' but no "
+                "other finding points at it with cross_reviewer_status="
+                "'duplicate_confirmed'"
             )
 
     # --- seed ledger checks ---
@@ -371,13 +437,7 @@ def main():
 
 
 def _report():
-    for w in warnings:
-        print(f"WARNING: {w}")
-    for e in errors:
-        print(f"ERROR: {e}")
-    print(f"\nChecked reviewer ledgers: {len(errors)} error(s), {len(warnings)} warning(s).")
-    if errors:
-        sys.exit(1)
+    sys.exit(_reporter.report("WARNING: ", "ERROR: ", "Checked reviewer ledgers"))
 
 
 if __name__ == "__main__":
