@@ -152,6 +152,7 @@ def main():
             "is_canonical_for_boundary",
             "stale",
             "eligible",
+            "exclusion_reason",
             "outcome",
             "non_completion_reason",
             "reviewer_tool",
@@ -241,6 +242,24 @@ def main():
                 f"outcome={a.get('outcome')!r} — both docs state a "
                 "non_completion_reason attempt 'still resolves to' "
                 "human-review; the mirror of the blank-outcome check above"
+            )
+        if a.get("outcome") and not a.get("non_completion_reason") and not a.get("completed_at"):
+            # A real judgment (agent-clear/blocker/human-review reached
+            # without a non_completion_reason) is, by definition, a review
+            # that actually ran to completion — it must carry a timestamp.
+            fail(
+                f"{ATTEMPT_LEDGER}: {a['attempt_id']} has outcome="
+                f"{a.get('outcome')!r} with no non_completion_reason, but "
+                "completed_at is blank — a real judgment must record when "
+                "it completed"
+            )
+        if a.get("eligible") == "FALSE" and not a.get("exclusion_reason"):
+            # reviewer-pilot.md: ineligible PRs are "recorded as excluded
+            # rather than silently skipped" — that requires a reason, not
+            # just the boolean.
+            fail(
+                f"{ATTEMPT_LEDGER}: {a['attempt_id']} has eligible='FALSE' "
+                "but exclusion_reason is blank"
             )
 
     # exactly one canonical attempt per (repository, pr_url, reviewer_tool,
@@ -406,15 +425,21 @@ def main():
                     f"{FINDING_LEDGER}: {f['finding_id']}.matched_finding_id="
                     f"{mid!r} has no matching finding row"
                 )
-            elif (
-                f.get("cross_reviewer_status") != "duplicate_rejected"
-                and f.get("root_cause_key") != findings_by_id[mid].get("root_cause_key")
-            ):
-                # A rejected match is the documented exception: step 5 of the
-                # matching procedure has a rejected match keep its
-                # matched_finding_id pointer but split into its own
-                # root_cause_key, since rejection means they do NOT share a
-                # root cause. Every other status asserts they do.
+            elif f.get("cross_reviewer_status") == "duplicate_rejected":
+                # step 5 of the matching procedure: a rejected match keeps
+                # its matched_finding_id pointer but must split into its
+                # own root_cause_key, since rejection means the two do NOT
+                # share a root cause — the inverse of every other status,
+                # which asserts they do.
+                if f.get("root_cause_key") == findings_by_id[mid].get("root_cause_key"):
+                    fail(
+                        f"{FINDING_LEDGER}: {f['finding_id']} is "
+                        "'duplicate_rejected' against "
+                        f"{mid!r} but still shares root_cause_key="
+                        f"{f.get('root_cause_key')!r} — a rejected match must "
+                        "split into its own root_cause_key"
+                    )
+            elif f.get("root_cause_key") != findings_by_id[mid].get("root_cause_key"):
                 fail(
                     f"{FINDING_LEDGER}: {f['finding_id']}.root_cause_key="
                     f"{f.get('root_cause_key')!r} does not match matched "
@@ -481,6 +506,36 @@ def main():
                 "'duplicate_confirmed'"
             )
 
+    # An attempt's outcome must agree with its own findings: reviewer-
+    # pilot.md defines blocker as "an automatic reviewer reports a concrete
+    # P0/P1 issue confirmed by a human", and agent-clear as reporting "no
+    # major issue" — neither should be contradicted by a confirmed P0/P1
+    # finding under that attempt.
+    findings_by_attempt = defaultdict(list)
+    for f in findings:
+        if f.get("attempt_id") in attempt_ids:
+            findings_by_attempt[f["attempt_id"]].append(f)
+    for a in attempts:
+        outcome = a.get("outcome")
+        if outcome not in {"agent-clear", "blocker"}:
+            continue
+        has_confirmed_major = any(
+            f.get("severity") in {"P0", "P1"} and f.get("adjudication") == "confirmed"
+            for f in findings_by_attempt.get(a["attempt_id"], [])
+        )
+        if outcome == "blocker" and not has_confirmed_major:
+            fail(
+                f"{ATTEMPT_LEDGER}: {a['attempt_id']} has outcome='blocker' "
+                "but no child finding is a confirmed P0/P1 — blocker "
+                "requires a concrete P0/P1 issue confirmed by a human"
+            )
+        if outcome == "agent-clear" and has_confirmed_major:
+            fail(
+                f"{ATTEMPT_LEDGER}: {a['attempt_id']} has outcome="
+                "'agent-clear' but a child finding is a confirmed P0/P1 — "
+                "agent-clear means no major issue"
+            )
+
     # --- seed ledger checks ---
     # Column presence (including reviewer_tool — a seed's result is now
     # per-reviewer, not per-seed) is required above, unconditionally, even
@@ -511,6 +566,18 @@ def main():
                 fail(
                     f"{SEED_LEDGER}: {s.get('seed_id', '?')}.observed_finding_id="
                     f"{ofid!r} has no matching finding row"
+                )
+            elif ofid and aid and findings_by_id.get(ofid, {}).get("attempt_id") != aid:
+                # The existing reviewer_tool check above only compares
+                # against the seed's *cited* attempt_id, not the actual
+                # parent of the finding it claims caught the seed — a seed
+                # can otherwise appear caught by an unrelated attempt/PR
+                # entirely.
+                fail(
+                    f"{SEED_LEDGER}: {s.get('seed_id', '?')}.observed_finding_id="
+                    f"{ofid!r} belongs to attempt "
+                    f"{findings_by_id.get(ofid, {}).get('attempt_id')!r}, not "
+                    f"this seed's attempt_id={aid!r}"
                 )
 
     _report()
