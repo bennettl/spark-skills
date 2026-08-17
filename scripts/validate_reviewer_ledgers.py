@@ -171,8 +171,23 @@ def main():
             "reviewer_tool",
             "root_cause_key",
             "matched_finding_id",
+            "adjudicated_by",
+            "adjudication_evidence",
         ],
     )
+    if seed_header is not None:
+        require_columns(
+            SEED_LEDGER,
+            seed_header,
+            [
+                "seed_id",
+                "attempt_id",
+                "reviewer_tool",
+                "expected_outcome",
+                "expected_severity",
+                "observed_finding_id",
+            ],
+        )
     if "attempt_id" not in attempt_header or "finding_id" not in finding_header:
         # Can't safely build the primary-key sets or any cross-reference
         # check below without these; require_columns() above already
@@ -351,26 +366,37 @@ def main():
                 f"parent attempt {aid}.reviewer_tool="
                 f"{parent.get('reviewer_tool')!r} != 'human'"
             )
-        if f.get("adjudication") and not f.get("adjudicated_by"):
-            # Mirrors the identical sign-off requirement already enforced for
-            # cross_reviewer_status below — reviewer-pilot.md: "the model
-            # never adjudicates its own findings... A maintainer records
-            # confirmed, false_finding, missed_issue, pre_existing, or
-            # out_of_scope, with an evidence link."
-            fail(
-                f"{FINDING_LEDGER}: {f['finding_id']}.adjudication="
-                f"{f.get('adjudication')!r} but adjudicated_by is blank"
-            )
+        if f.get("adjudication"):
+            # reviewer-pilot.md: "the model never adjudicates its own
+            # findings... A maintainer records confirmed, false_finding,
+            # missed_issue, pre_existing, or out_of_scope, with an evidence
+            # link" — both the name and the evidence link are part of that
+            # one sign-off, not an optional extra.
+            if not f.get("adjudicated_by"):
+                fail(
+                    f"{FINDING_LEDGER}: {f['finding_id']}.adjudication="
+                    f"{f.get('adjudication')!r} but adjudicated_by is blank"
+                )
+            if not f.get("adjudication_evidence"):
+                fail(
+                    f"{FINDING_LEDGER}: {f['finding_id']}.adjudication="
+                    f"{f.get('adjudication')!r} but adjudication_evidence is "
+                    "blank"
+                )
         mid = f.get("matched_finding_id", "")
         method = f.get("match_method", "")
-        if bool(mid) != bool(method):
-            # multi-reviewer-matching.md defines match_method as one of the
-            # named methods "or blank for an unmatched finding" — the two
-            # columns should agree on whether a match was proposed at all.
+        confidence = f.get("match_confidence", "")
+        if len({bool(mid), bool(method), bool(confidence)}) != 1:
+            # multi-reviewer-matching.md: match_method is "blank for an
+            # unmatched finding", and match_confidence is recorded "from
+            # this step" alongside match_method whenever a match is
+            # proposed (step 3) — all three should agree on whether a match
+            # was proposed at all, not just the first two.
             fail(
                 f"{FINDING_LEDGER}: {f['finding_id']}.matched_finding_id="
-                f"{mid!r} and .match_method={method!r} disagree on whether a "
-                "match was proposed — both must be blank, or both set"
+                f"{mid!r}, .match_method={method!r}, .match_confidence="
+                f"{confidence!r} disagree on whether a match was proposed — "
+                "all three must be blank, or all three set"
             )
         if mid:
             if mid == f["finding_id"]:
@@ -456,16 +482,13 @@ def main():
             )
 
     # --- seed ledger checks ---
-    # The column-existence check runs even when there are zero data rows yet
-    # (the real ledger currently is header-only) — gating it on `and seeds`
-    # would make it silently unable to ever fire until the first seed is
-    # recorded, which is exactly backwards for a schema check.
+    # Column presence (including reviewer_tool — a seed's result is now
+    # per-reviewer, not per-seed) is required above, unconditionally, even
+    # when there are zero data rows yet (the real ledger currently is
+    # header-only) — gating it on `and seeds` would make it silently unable
+    # to ever fire until the first seed is recorded, backwards for a schema
+    # check.
     if seed_header is not None:
-        if "reviewer_tool" not in seed_header:
-            fail(
-                f"{SEED_LEDGER}: missing reviewer_tool column — a seed's "
-                "result is now per-reviewer, not per-seed"
-            )
         check_enum(SEED_LEDGER, seeds, "expected_outcome", OUTCOME_VALUES, "seed_id")
         check_enum(SEED_LEDGER, seeds, "expected_severity", SEVERITY_VALUES, "seed_id")
         for s in seeds:
