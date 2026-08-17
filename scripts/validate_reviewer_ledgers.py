@@ -97,6 +97,16 @@ def read_rows(path):
     return header, dicts
 
 
+def require_columns(path, header, columns):
+    """Fail if any of `columns` is entirely absent from the header. Without
+    this, check_enum()'s row.get(column, "") makes a *missing* column
+    indistinguishable from every row correctly leaving it blank, for any
+    enum whose allowed set includes "" — which is most of them."""
+    missing = [c for c in columns if c not in header]
+    if missing:
+        fail(f"{path}: missing required column(s): {missing}")
+
+
 def check_enum(path, rows, column, allowed, row_key="finding_id"):
     for row in rows:
         val = row.get(column, "")
@@ -118,6 +128,32 @@ def main():
 
     attempt_ids = {a["attempt_id"] for a in attempts}
     finding_ids = {f["finding_id"] for f in findings}
+
+    require_columns(
+        ATTEMPT_LEDGER,
+        attempt_header,
+        [
+            "is_canonical_for_boundary",
+            "stale",
+            "eligible",
+            "outcome",
+            "non_completion_reason",
+            "reviewer_tool",
+        ],
+    )
+    require_columns(
+        FINDING_LEDGER,
+        finding_header,
+        [
+            "severity",
+            "source",
+            "match_method",
+            "match_confidence",
+            "cross_reviewer_status",
+            "adjudication",
+            "reviewer_tool",
+        ],
+    )
 
     # --- attempt ledger checks ---
     check_enum(ATTEMPT_LEDGER, attempts, "is_canonical_for_boundary", BOOL_VALUES, "attempt_id")
@@ -152,6 +188,14 @@ def main():
                 "non_completion_reason and no outcome — a completed attempt "
                 "must record an outcome (agent-clear/blocker/human-review)"
             )
+        if a.get("non_completion_reason") and a.get("outcome") != "human-review":
+            fail(
+                f"{ATTEMPT_LEDGER}: {a['attempt_id']} has "
+                f"non_completion_reason={a.get('non_completion_reason')!r} but "
+                f"outcome={a.get('outcome')!r} — both docs state a "
+                "non_completion_reason attempt 'still resolves to' "
+                "human-review; the mirror of the blank-outcome check above"
+            )
 
     # exactly one canonical attempt per (repository, pr_url, reviewer_tool,
     # merge_base_sha, reviewed_head_sha) boundary. repository/pr_url are part
@@ -159,9 +203,17 @@ def main():
     # principle, e.g. a SHA-1 collision or a shared history between repos —
     # coincide across two unrelated PRs; the key should identify one PR's
     # boundary, not just one commit pair.
+    #
+    # Grouped from ALL attempts sharing a boundary (not just TRUE-flagged
+    # ones), so a boundary where every attempt is FALSE — zero canonical,
+    # not just "not more than one" — is inspected too. A boundary is only
+    # required to have a canonical attempt once at least one attempt on it
+    # resolved to a real outcome (non-blank); one still in flight (blank
+    # outcome, no non_completion_reason yet) doesn't need one yet, though
+    # that state itself already fails the blank-outcome check above.
     from collections import defaultdict
 
-    canonical_groups = defaultdict(list)
+    boundary_groups = defaultdict(list)
     for a in attempts:
         key = (
             a.get("repository"),
@@ -170,13 +222,22 @@ def main():
             a.get("merge_base_sha"),
             a.get("reviewed_head_sha"),
         )
-        if a.get("is_canonical_for_boundary") == "TRUE":
-            canonical_groups[key].append(a["attempt_id"])
-    for key, ids in canonical_groups.items():
-        if len(ids) > 1:
+        boundary_groups[key].append(a)
+    for key, group in boundary_groups.items():
+        canonical_ids = [
+            a["attempt_id"] for a in group if a.get("is_canonical_for_boundary") == "TRUE"
+        ]
+        if len(canonical_ids) > 1:
             fail(
-                f"{ATTEMPT_LEDGER}: boundary {key} has {len(ids)} attempts "
-                f"marked canonical ({ids}) — must be exactly one"
+                f"{ATTEMPT_LEDGER}: boundary {key} has {len(canonical_ids)} "
+                f"attempts marked canonical ({canonical_ids}) — must be "
+                "exactly one"
+            )
+        elif not canonical_ids and any(a.get("outcome") for a in group):
+            fail(
+                f"{ATTEMPT_LEDGER}: boundary {key} has a resolved outcome "
+                f"but no attempt marked is_canonical_for_boundary=TRUE "
+                f"({[a['attempt_id'] for a in group]}) — must be exactly one"
             )
 
     # --- finding ledger checks ---
@@ -236,10 +297,25 @@ def main():
                 "result is now per-reviewer, not per-seed"
             )
         for s in seeds:
-            if s.get("attempt_id") and s["attempt_id"] not in attempt_ids:
+            aid = s.get("attempt_id", "")
+            if aid:
+                if aid not in attempt_ids:
+                    fail(
+                        f"{SEED_LEDGER}: {s.get('seed_id', '?')}.attempt_id="
+                        f"{aid!r} has no matching attempt row"
+                    )
+                elif s.get("reviewer_tool") != attempts_by_id[aid].get("reviewer_tool"):
+                    fail(
+                        f"{SEED_LEDGER}: {s.get('seed_id', '?')}.reviewer_tool="
+                        f"{s.get('reviewer_tool')!r} does not match linked "
+                        f"attempt {aid}.reviewer_tool="
+                        f"{attempts_by_id[aid].get('reviewer_tool')!r}"
+                    )
+            ofid = s.get("observed_finding_id", "")
+            if ofid and ofid not in finding_ids:
                 fail(
-                    f"{SEED_LEDGER}: {s.get('seed_id', '?')}.attempt_id="
-                    f"{s['attempt_id']!r} has no matching attempt row"
+                    f"{SEED_LEDGER}: {s.get('seed_id', '?')}.observed_finding_id="
+                    f"{ofid!r} has no matching finding row"
                 )
 
     _report()
