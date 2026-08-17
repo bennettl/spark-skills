@@ -128,22 +128,27 @@ def main():
         _report()
         return
 
-    attempt_id_counts = Counter(a["attempt_id"] for a in attempts)
-    finding_id_counts = Counter(f["finding_id"] for f in findings)
-    for aid, count in attempt_id_counts.items():
-        if count > 1:
-            fail(f"{ATTEMPT_LEDGER}: attempt_id={aid!r} appears on {count} rows, must be unique")
-    for fid, count in finding_id_counts.items():
-        if count > 1:
-            fail(f"{FINDING_LEDGER}: finding_id={fid!r} appears on {count} rows, must be unique")
-
-    attempt_ids = set(attempt_id_counts)
-    finding_ids = set(finding_id_counts)
-
+    # Required-column checks run BEFORE anything reads these columns —
+    # attempt_id/finding_id in particular are read via bare a["attempt_id"]/
+    # f["finding_id"] subscripting in several places below (boundary
+    # grouping, attempts_by_id/findings_by_id, the pairing checks), so an
+    # absent column needs to stop execution here with a clear message
+    # instead of surfacing as an uncaught KeyError. merge_base_sha/
+    # reviewed_head_sha/repository/pr_url/completed_at are only ever read
+    # via .get() further down, so their absence wouldn't crash — but would
+    # silently collapse every row's boundary key to the same None-filled
+    # tuple and disable the recency comparison, which is exactly the
+    # silent-pass failure mode require_columns() exists to close.
     require_columns(
         ATTEMPT_LEDGER,
         attempt_header,
         [
+            "attempt_id",
+            "repository",
+            "pr_url",
+            "merge_base_sha",
+            "reviewed_head_sha",
+            "completed_at",
             "is_canonical_for_boundary",
             "stale",
             "eligible",
@@ -156,6 +161,7 @@ def main():
         FINDING_LEDGER,
         finding_header,
         [
+            "finding_id",
             "severity",
             "source",
             "match_method",
@@ -167,6 +173,25 @@ def main():
             "matched_finding_id",
         ],
     )
+    if "attempt_id" not in attempt_header or "finding_id" not in finding_header:
+        # Can't safely build the primary-key sets or any cross-reference
+        # check below without these; require_columns() above already
+        # reported it. Stop here rather than crash on the first bare
+        # a["attempt_id"]/f["finding_id"] access.
+        _report()
+        return
+
+    attempt_id_counts = Counter(a["attempt_id"] for a in attempts)
+    finding_id_counts = Counter(f["finding_id"] for f in findings)
+    for aid, count in attempt_id_counts.items():
+        if count > 1:
+            fail(f"{ATTEMPT_LEDGER}: attempt_id={aid!r} appears on {count} rows, must be unique")
+    for fid, count in finding_id_counts.items():
+        if count > 1:
+            fail(f"{FINDING_LEDGER}: finding_id={fid!r} appears on {count} rows, must be unique")
+
+    attempt_ids = set(attempt_id_counts)
+    finding_ids = set(finding_id_counts)
 
     # --- attempt ledger checks ---
     check_enum(ATTEMPT_LEDGER, attempts, "is_canonical_for_boundary", BOOL_VALUES, "attempt_id")
@@ -275,7 +300,12 @@ def main():
                     "canonical must be a completed review, not one that "
                     "never ran"
                 )
-        if len(canonical_ids) == 1 and completed:
+        if len(canonical_ids) == 1 and completed and not canonical_row.get("non_completion_reason"):
+            # Skip when the canonical row itself has a non_completion_reason
+            # — the check above already reports that case, and comparing a
+            # blank completed_at (sorts before any real timestamp) against a
+            # genuinely completed sibling would fire a second, redundant
+            # fail() for the identical bad row.
             latest = max(completed, key=lambda a: a["completed_at"])
             if canonical_row.get("completed_at") < latest["completed_at"]:
                 fail(
@@ -321,7 +351,27 @@ def main():
                 f"parent attempt {aid}.reviewer_tool="
                 f"{parent.get('reviewer_tool')!r} != 'human'"
             )
+        if f.get("adjudication") and not f.get("adjudicated_by"):
+            # Mirrors the identical sign-off requirement already enforced for
+            # cross_reviewer_status below — reviewer-pilot.md: "the model
+            # never adjudicates its own findings... A maintainer records
+            # confirmed, false_finding, missed_issue, pre_existing, or
+            # out_of_scope, with an evidence link."
+            fail(
+                f"{FINDING_LEDGER}: {f['finding_id']}.adjudication="
+                f"{f.get('adjudication')!r} but adjudicated_by is blank"
+            )
         mid = f.get("matched_finding_id", "")
+        method = f.get("match_method", "")
+        if bool(mid) != bool(method):
+            # multi-reviewer-matching.md defines match_method as one of the
+            # named methods "or blank for an unmatched finding" — the two
+            # columns should agree on whether a match was proposed at all.
+            fail(
+                f"{FINDING_LEDGER}: {f['finding_id']}.matched_finding_id="
+                f"{mid!r} and .match_method={method!r} disagree on whether a "
+                "match was proposed — both must be blank, or both set"
+            )
         if mid:
             if mid == f["finding_id"]:
                 fail(f"{FINDING_LEDGER}: {f['finding_id']}.matched_finding_id points to itself")
@@ -351,14 +401,19 @@ def main():
                 f"{FINDING_LEDGER}: {f['finding_id']} has cross_reviewer_status="
                 f"{status!r} but no matched_finding_id"
             )
-        if status == "unique" and mid:
-            # "unique" is documented as "no candidate match was proposed" —
-            # a non-blank matched_finding_id contradicts that regardless of
-            # whether the target's root_cause_key happens to agree.
+        if status in {"unique", "corroborated"} and mid:
+            # "unique" is documented as "no candidate match was proposed".
+            # "corroborated" is documented as the cluster's primary, which
+            # "the earliest finding chronologically" always is, with
+            # "matched_finding_id blank" — later findings point at it, it
+            # never points at another. A non-blank matched_finding_id
+            # contradicts either status regardless of whether the target's
+            # root_cause_key happens to agree, and without this a
+            # corroborated primary could point at its own duplicate_confirmed
+            # child, forming a two-node mutual-pointer cycle.
             fail(
                 f"{FINDING_LEDGER}: {f['finding_id']} has cross_reviewer_status="
-                "'unique' but a non-blank matched_finding_id "
-                f"({mid!r}) — unique means no match was proposed"
+                f"{status!r} but a non-blank matched_finding_id ({mid!r})"
             )
         if status in {"corroborated", "duplicate_confirmed", "duplicate_rejected"} and not f.get(
             "adjudicated_by"
@@ -411,6 +466,8 @@ def main():
                 f"{SEED_LEDGER}: missing reviewer_tool column — a seed's "
                 "result is now per-reviewer, not per-seed"
             )
+        check_enum(SEED_LEDGER, seeds, "expected_outcome", OUTCOME_VALUES, "seed_id")
+        check_enum(SEED_LEDGER, seeds, "expected_severity", SEVERITY_VALUES, "seed_id")
         for s in seeds:
             aid = s.get("attempt_id", "")
             if aid:
