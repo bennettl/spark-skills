@@ -14,6 +14,7 @@ verification against the source (see `meta/multi-reviewer-matching.md`).
 import csv
 import os
 import sys
+from collections import Counter, defaultdict
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 META = os.path.join(ROOT, "meta")
@@ -126,8 +127,17 @@ def main():
         _report()
         return
 
-    attempt_ids = {a["attempt_id"] for a in attempts}
-    finding_ids = {f["finding_id"] for f in findings}
+    attempt_id_counts = Counter(a["attempt_id"] for a in attempts)
+    finding_id_counts = Counter(f["finding_id"] for f in findings)
+    for aid, count in attempt_id_counts.items():
+        if count > 1:
+            fail(f"{ATTEMPT_LEDGER}: attempt_id={aid!r} appears on {count} rows, must be unique")
+    for fid, count in finding_id_counts.items():
+        if count > 1:
+            fail(f"{FINDING_LEDGER}: finding_id={fid!r} appears on {count} rows, must be unique")
+
+    attempt_ids = set(attempt_id_counts)
+    finding_ids = set(finding_id_counts)
 
     require_columns(
         ATTEMPT_LEDGER,
@@ -175,13 +185,6 @@ def main():
                 f"{sorted(KNOWN_REVIEWER_TOOLS)} — fine if this is a newly "
                 "added reviewer, a typo otherwise"
             )
-        if a.get("outcome") in {"agent-clear", "blocker"} and a.get("non_completion_reason"):
-            warn(
-                f"{ATTEMPT_LEDGER}: {a['attempt_id']} has outcome="
-                f"{a.get('outcome')!r} and a non-empty non_completion_reason "
-                "— a completed, judged attempt shouldn't also carry a "
-                "non-completion reason (human-review legitimately can)"
-            )
         if not a.get("non_completion_reason") and not a.get("outcome"):
             fail(
                 f"{ATTEMPT_LEDGER}: {a['attempt_id']} has no "
@@ -211,8 +214,6 @@ def main():
     # resolved to a real outcome (non-blank); one still in flight (blank
     # outcome, no non_completion_reason yet) doesn't need one yet, though
     # that state itself already fails the blank-outcome check above.
-    from collections import defaultdict
-
     boundary_groups = defaultdict(list)
     for a in attempts:
         key = (
@@ -233,12 +234,40 @@ def main():
                 f"attempts marked canonical ({canonical_ids}) — must be "
                 "exactly one"
             )
-        elif not canonical_ids and any(a.get("outcome") for a in group):
+        elif not canonical_ids and any(
+            a.get("outcome") and not a.get("non_completion_reason") for a in group
+        ):
+            # A non-blank outcome alone isn't "completed" — the mirror
+            # invariant above forces outcome=human-review whenever
+            # non_completion_reason is set, so a quota-exhausted attempt
+            # that never ran a review would otherwise trip this. Only an
+            # attempt with a resolved outcome AND no non_completion_reason
+            # is a real completed review requiring a canonical row.
             fail(
-                f"{ATTEMPT_LEDGER}: boundary {key} has a resolved outcome "
+                f"{ATTEMPT_LEDGER}: boundary {key} has a completed review "
                 f"but no attempt marked is_canonical_for_boundary=TRUE "
                 f"({[a['attempt_id'] for a in group]}) — must be exactly one"
             )
+
+        # canonical must be the LATEST completed attempt on the boundary, not
+        # merely "the one flagged" — multi-reviewer-matching.md defines it as
+        # "the last completed review". "Completed" here means the same
+        # outcome-without-non_completion_reason test used above.
+        completed = [
+            a for a in group
+            if a.get("outcome") and not a.get("non_completion_reason") and a.get("completed_at")
+        ]
+        if len(canonical_ids) == 1 and completed:
+            canonical_row = next(a for a in group if a["attempt_id"] == canonical_ids[0])
+            latest = max(completed, key=lambda a: a["completed_at"])
+            if canonical_row.get("completed_at") < latest["completed_at"]:
+                fail(
+                    f"{ATTEMPT_LEDGER}: boundary {key} marks {canonical_ids[0]} "
+                    f"canonical (completed_at={canonical_row.get('completed_at')!r}) "
+                    f"but {latest['attempt_id']} completed later "
+                    f"({latest['completed_at']!r}) — canonical must be the "
+                    "latest completed attempt"
+                )
 
     # --- finding ledger checks ---
     check_enum(FINDING_LEDGER, findings, "severity", SEVERITY_VALUES)
@@ -251,6 +280,7 @@ def main():
     check_enum(FINDING_LEDGER, findings, "adjudication", ADJUDICATION_VALUES)
 
     attempts_by_id = {a["attempt_id"]: a for a in attempts}
+    findings_by_id = {f["finding_id"]: f for f in findings}
     for f in findings:
         aid = f.get("attempt_id", "")
         if aid not in attempt_ids:
@@ -271,6 +301,21 @@ def main():
                 fail(
                     f"{FINDING_LEDGER}: {f['finding_id']}.matched_finding_id="
                     f"{mid!r} has no matching finding row"
+                )
+            elif (
+                f.get("cross_reviewer_status") != "duplicate_rejected"
+                and f.get("root_cause_key") != findings_by_id[mid].get("root_cause_key")
+            ):
+                # A rejected match is the documented exception: step 5 of the
+                # matching procedure has a rejected match keep its
+                # matched_finding_id pointer but split into its own
+                # root_cause_key, since rejection means they do NOT share a
+                # root cause. Every other status asserts they do.
+                fail(
+                    f"{FINDING_LEDGER}: {f['finding_id']}.root_cause_key="
+                    f"{f.get('root_cause_key')!r} does not match matched "
+                    f"finding {mid}.root_cause_key="
+                    f"{findings_by_id[mid].get('root_cause_key')!r}"
                 )
         status = f.get("cross_reviewer_status", "")
         if status in {"duplicate_confirmed", "duplicate_rejected"} and not mid:
