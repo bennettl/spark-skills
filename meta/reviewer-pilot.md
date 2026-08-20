@@ -22,7 +22,12 @@ this pilot.
 
 - **agent-clear** — every automatic reviewer configured for the repository
   reports no major issue across the exact current review boundary. A human
-  review is still required.
+  review is still required. On an individual ledger attempt row,
+  `outcome=agent-clear` means only that one reviewer, alone, found no major
+  issue on that boundary — the true PR-level "every reviewer clear"
+  disposition is a separately computed judgment (see AGENTS.md's
+  merge-readiness section), not something any single attempt row can answer
+  by itself; see `multi-reviewer-matching.md`'s "Recommended resolutions" #10.
 - **blocker** — an automatic reviewer reports a concrete P0/P1 issue confirmed
   by a human.
 - **human-review** — a review is absent/stale, tooling failed, current policy

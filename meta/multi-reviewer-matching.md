@@ -220,9 +220,9 @@ before any of them count toward a corroboration or unique-catch metric.
 
 These were judgment calls, not just bugs — a prior pass of this document left
 them open. They now carry a recommendation, applied to this draft as the
-working default. None of this is final: it needs the pilot owner's (Bennett's)
-explicit confirmation before it governs real ledger rows, and any of it can be
-overridden.
+working default. Items 2, 4, and 10 were decided by Sunny on 2026-08-20 (see
+each item below for reasoning); any can still be revisited if it doesn't hold
+up in practice.
 
 1. **"Confirmed root cause" for corroboration purposes** — resolved: any
    member confirmed (given the match itself is `duplicate_confirmed`) counts
@@ -303,18 +303,24 @@ overridden.
     ("reruns get new attempt IDs; findings are never overwritten"), so there's
     no defined answer for what happens to an already-recorded `agent-clear`
     attempt if a second reviewer's later attempt on the identical boundary
-    finds a P0. **Recommendation, not yet applied — this needs the pilot
-    owner's decision before it's load-bearing:** keep `outcome=agent-clear` on
-    an attempt row meaning only "this one reviewer, alone, found no major
-    issue on this boundary," and treat the true PR-level disposition
-    `AGENTS.md`'s merge-readiness section describes (every configured reviewer
-    clear) as a separately computed, currently-manual judgment a maintainer
-    makes by reading every reviewer's attempt for the boundary — not
-    something any single attempt row's `outcome` value can answer alone. If
-    that's not the right call, the alternative is renaming the attempt-level
-    value (e.g. `reviewer-clear`) to stop reusing `agent-clear` for two
-    different scopes — a larger change to existing pilot vocabulary that
-    shouldn't happen without sign-off.
+    finds a P0. **Decided (Sunny, 2026-08-20), Option A, no rename:** keep
+    `outcome=agent-clear` on an attempt row meaning only "this one reviewer,
+    alone, found no major issue on this boundary," and treat the true
+    PR-level disposition `AGENTS.md`'s merge-readiness section describes
+    (every configured reviewer clear) as a separately computed,
+    currently-manual judgment a maintainer makes by reading every reviewer's
+    attempt for the boundary — not something any single attempt row's
+    `outcome` value can answer alone. Verified this doesn't silently collide
+    in practice: `validate_reviewer_ledgers.py`'s `agent-clear`/confirmed-P0
+    check groups findings strictly by `attempt_id`, never across reviewers on
+    the same boundary, and the Metrics section above reports everything
+    "per-reviewer and pooled, reported separately, never only pooled" — no
+    automated path anywhere treats `agent-clear` as a boundary-level
+    aggregate today. The alternative — renaming the attempt-level value
+    (e.g. `reviewer-clear`) to stop reusing `agent-clear` for two different
+    scopes — remains available later if this creates real confusion in
+    practice, but isn't warranted preemptively for a collision that doesn't
+    currently occur.
 
 Separately: adding a second standing reviewer is itself a change to "models,
 automatic-review settings, policy, taxonomy, or metrics" under the existing
