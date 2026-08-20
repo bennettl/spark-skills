@@ -104,10 +104,17 @@ DEFER_WINDOW = 6
 # A deferral keyword alone is not a tie-break: "the authoritative request
 # contract is the DTO" and "5. Own the ordering" both match DEFERS but name no
 # other skill, so they are not evidence that *this* fact has a declared owner.
-# A real tie-break names who wins — require another registry skill's name
-# within a tight sub-window of the keyword itself, not just somewhere in the
-# broad paragraph-level window around the fact.
-DEFER_NAME_WINDOW = 3
+# A real tie-break names who wins, and every genuine one in this registry
+# ("the authoritative check is the `api-contract-check` skill", "`self-review`
+# owns per-repo rules; `api-contract-check` owns REST field shape") names that
+# skill on the *same* line as the keyword. A multi-line window instead catches
+# unrelated nearby prose — "Findings by origin ... via `self-review`" a few
+# lines below "what's delegated", or "hand the endpoint to
+# `api-contract-check`" a couple of lines after "controller that owns it" —
+# and wrongly credits it as a declared tie-break for whatever fact happened to
+# be hit nearby. Require the keyword and the other skill's name on the same
+# line.
+DEFER_NAME_WINDOW = 0
 
 errors, warnings, notes = [], [], []
 
@@ -173,6 +180,27 @@ def verified_app_repo(name, path):
     if not expected_origin.match(normalized_origin):
         return None
     return head
+
+
+def committed_registry_head():
+    """HEAD of this registry itself, so a `meta/` or `scripts/` claim is
+    checked against committed content rather than the working tree.
+
+    os.path.exists() on a working-tree path accepts an untracked file that
+    disappears in a clean checkout, and follows a symlink whether or not its
+    target is committed or even inside the repo — the exact failure modes
+    already fixed for app-repo path checks. Same fix, same reasoning, applied
+    to the registry's own claims.
+    """
+    try:
+        return subprocess.run(
+            ["git", "-C", ROOT, "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
 
 
 def load_planned_skills():
@@ -281,7 +309,7 @@ def check_skill_crossrefs(name, skill_dir, all_skills):
             line = text[: m.start()].count("\n") + 1
             token_line = lines[line - 1]
             direct_callees = re.findall(
-                r"(?:delegat(?:e|es|ed|ing|ion)|handoff|hand off)\s+"
+                r"(?:delegat(?:e|es|ed|ing|ion)|handoff|hand off|run(?:s|ning)?)\s+"
                 r"(?:directly\s+)?(?:to\s+)?(?:[*_~]+)?`([^`]+)`",
                 token_line,
                 re.I,
@@ -384,7 +412,7 @@ def path_in_head_tree(repo_root, head, relpath):
         return False
 
 
-def check_repo_paths(name, skill_dir, verified):
+def check_repo_paths(name, skill_dir, verified, registry_head):
     """Do the app-repo paths this skill names still exist?
 
     This is the check that has caught the most real defects: a dead
@@ -394,7 +422,10 @@ def check_repo_paths(name, skill_dir, verified):
     `verified` maps repo name -> (repo_root, head_sha) for repos already
     confirmed by `verified_app_repo` to be the expected Git checkout at a
     readable HEAD. Presence is checked against that HEAD's tree (see
-    `path_in_head_tree`), never the working tree.
+    `path_in_head_tree`), never the working tree. `registry_head` is this
+    same registry's own committed HEAD (see `committed_registry_head`), used
+    the same way for `meta/`/`scripts/` claims — an untracked file or a
+    symlink escaping the checkout must not read as verified here either.
     """
     for path in md_files(skill_dir):
         if os.path.basename(path) in EXEMPT_BASENAMES:
@@ -404,11 +435,11 @@ def check_repo_paths(name, skill_dir, verified):
             if tok.startswith(REGISTRY_ROOTS):
                 # These roots exist in this repo too. Resolve locally; only fall
                 # through to the app repos if it isn't a registry file.
-                registry_candidate = os.path.abspath(os.path.join(ROOT, tok))
-                if (
-                    os.path.commonpath((ROOT, registry_candidate)) == ROOT
-                    and os.path.exists(registry_candidate)
-                ):
+                if registry_head is not None and path_in_head_tree(ROOT, registry_head, tok):
+                    continue
+                if registry_head is None:
+                    # Can't check committed content — don't claim absence
+                    # from evidence (the working tree) we don't trust either.
                     continue
                 if tok.startswith("meta/"):
                     line = text[: m.start()].count("\n") + 1
@@ -546,10 +577,14 @@ def main():
             f"(missing or invalid: {', '.join(missing_repos)})"
         )
 
+    registry_head = committed_registry_head()
+    if registry_head is None:
+        note("registry HEAD unavailable — meta/ and scripts/ path claims deferred")
+
     for name, skill_dir in skills.items():
         check_reference_integrity(name, skill_dir)
         check_skill_crossrefs(name, skill_dir, skills)
-        check_repo_paths(name, skill_dir, verified)
+        check_repo_paths(name, skill_dir, verified, registry_head)
         check_expiring_facts(name, skill_dir)
     check_ownership(skills)
 
