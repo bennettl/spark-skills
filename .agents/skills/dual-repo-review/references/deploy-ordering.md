@@ -126,17 +126,22 @@ Fold the answers into a **sequenced merge plan** in the report — an ordered li
 person can execute, with the verification step between each:
 
 1. Provision the new SQS queue (`scripts/setup-queue.sh`) — before any deploy.
-2. Merge + deploy **spark-api** #N. Schema effect: 3 new tables, 1 nullable column
+2. Before merging spark-api, discover and run the checks available in the target
+   spark-api branch's package scripts and CI configuration. Record exact
+   commands/results and explicitly state any changed behavior without automated
+   coverage; a failing required check blocks this sequence — self-review
+   complements build CI, it does not run it.
+3. Merge + deploy **spark-api** #N. Schema effect: 3 new tables, 1 nullable column
    added to `assignment`. Additive; no data-loss risk.
-3. Verify: `GET /process-insights?...` returns `{ "data": … }`; the consumer logs a
+4. Verify: `GET /process-insights?...` returns `{ "data": … }`; the consumer logs a
    successful poll.
-4. Before frontend deployment, discover and run the checks available in the
+5. Before frontend deployment, discover and run the checks available in the
    target spark-web branch's package scripts and CI configuration. Record exact
    commands/results and explicitly state any changed behavior without automated
    coverage; a failing required check blocks this sequence.
-5. Merge + deploy **spark-web** #M.
-6. Perform risk-specific browser/runtime verification against the deployed pair.
+6. Merge + deploy **spark-web** #M.
+7. Perform risk-specific browser/runtime verification against the deployed pair.
 
 Deploy window: **compatible.** Backend changes are additive, so the old frontend
-bundle is unaffected between the backend deploy in step 2 and frontend deploy in
-step 5.
+bundle is unaffected between the backend deploy in step 3 and frontend deploy in
+step 6.

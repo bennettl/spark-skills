@@ -32,13 +32,9 @@ The backend file even labels the payload `// WebSocket payload (FE-facing)`,
 distinguishing it from the internal `EventEmitter2` payloads below it. Delivery is
 socket.io via `src/events/gateway/events.gateway.ts`.
 
-At the time of writing both `EventType` enums carry the same ten members
-(`JobTrackerCompleted`, `JobProgressUpdated`, `ProposalCreated`, `ProposalReviewed`,
-`ProposalGenerating`, `GradingInsightUpdated`, `SubmissionReviewed`,
-`CourseRosterSynced`, `SubmissionScanProcessed`, `LmsSyncProgress`) and the same
-`CourseEvent` shape (`type`, `courseId`, `assignmentId?`, `entityId?`, `meta?`).
-**Do not trust that list — re-read both files.** It is a snapshot, and the whole
-point is that these drift.
+Read both files directly for the current member list and payload shape — any
+count or member list written here would be stale the moment either side changes,
+and the whole point of this seam is that they drift silently.
 
 **What to check when a diff touches either side:**
 

@@ -60,7 +60,7 @@ Group by who found it, so it's obvious what's delegated and what's new here.
 
 | # | sev | seam | what |
 |---|---|---|---|
-| 1 | **blocker** | event contract | `ProcessInsightReady` added to `event-types.const.ts:13`, absent from `use-event-invalidation.ts` `EventType` — no switch case, so nothing invalidates. Silent stale UI, no error. |
+| 1 | **high** | event contract | `ProcessInsightReady` added to `event-types.const.ts:13`, absent from `use-event-invalidation.ts` `EventType` — no switch case, so nothing invalidates. Silent stale UI, no error. Per `references/seam-inventory.md`, an added-but-unmirrored event is high; only a *renamed* event that drives a user-depended invalidation is a blocker. |
 | 2 | low | enum parity | `ProcessInsightStatus` gained `Skipped`; frontend union has 3 of 4 members |
 | 3 | — | orphan check | all 4 new routes consumed; all new `Endpoint` entries resolve. Clean. |
 
@@ -72,24 +72,27 @@ Ordered and executable, with verification between steps. See
 1. **Before any deploy:** provision the new SQS queue (`scripts/setup-queue.sh`; new
    constant in `libs/messaging/src/const.ts:8`).
 2. Fix seam blocker #1 and the ordering hazard below.
-3. Merge + deploy **spark-api #85**. Schema effect: **3 new tables** (additive,
+3. Before merging spark-api, run the checks discovered from the target branch's
+   package scripts and CI configuration. Record exact commands/results; a failure
+   blocks the sequence — self-review complements build CI, it does not run it.
+4. Merge + deploy **spark-api #85**. Schema effect: **3 new tables** (additive,
    safe) + **4 edits to existing entities**, of which `submission.status` narrows a
    type — **destructive**, needs additive-then-migrate, not in-place.
-4. Verify: the new route returns `{ "data": … }`; the consumer logs a successful poll.
-5. Before frontend deployment, run the checks discovered from the target
+5. Verify: the new route returns `{ "data": … }`; the consumer logs a successful poll.
+6. Before frontend deployment, run the checks discovered from the target
    branch's package scripts and CI configuration. Record exact commands/results;
    a failure blocks the sequence, and missing coverage must be stated explicitly.
-6. Merge + deploy **spark-web #73**.
-7. Perform risk-specific browser/runtime verification against the deployed pair.
+7. Merge + deploy **spark-web #73**.
+8. Perform risk-specific browser/runtime verification against the deployed pair.
 
 **Deploy window:** state it always, even when fine.
 
 > **Compatible.** Backend changes are additive from the old bundle's perspective, so
-> users on the pre-deploy frontend are unaffected between steps 3 and 6.
+> users on the pre-deploy frontend are unaffected between steps 4 and 7.
 
 or
 
-> **Not compatible.** `rolledUpAt` is renamed, so between steps 3 and 6 every user on
+> **Not compatible.** `rolledUpAt` is renamed, so between steps 4 and 7 every user on
 > the old bundle sees a blank Process panel. Make the backend serve both names for
 > one release, then narrow after the frontend ships. Deploying back-to-back shortens
 > the outage; it doesn't remove it.
