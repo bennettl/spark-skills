@@ -12,6 +12,7 @@ import {
   existsSync,
   fchmodSync,
   fstatSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -25,7 +26,18 @@ import { join } from "node:path";
 import { launch } from "./cdp.mjs";
 
 const trustedLocalOrigin = (label, value) => {
-  const url = new URL(value);
+  // new URL() throws a TypeError whose message/properties include the raw
+  // input verbatim. An uncaught throw here — this runs at module load, before
+  // any CLI try/catch exists — would print that input straight to the
+  // transcript, and a malformed value can itself carry a leaked token (e.g.
+  // one accidentally concatenated onto the origin). Never let the native
+  // error escape; always rethrow the fixed, content-free message below.
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${label} must be a root HTTP(S) loopback origin; refusing to expose credentials elsewhere (value redacted)`);
+  }
   const loopback = new Set(["localhost", "127.0.0.1", "[::1]"]);
   if (
     !["http:", "https:"].includes(url.protocol) ||
@@ -125,7 +137,9 @@ export async function importSession({ accessToken, refreshToken, who }) {
   const email = me?.email ?? who;
   if (!email) throw new Error("Could not determine the account email from /users/me");
   if (who && me?.email && normalizeEmail(who) !== normalizeEmail(me.email))
-    throw new Error(`Token belongs to ${me.email}, not ${who}`);
+    // Neither side is ours to print: me.email is live customer data from the
+    // API response, and `who` is caller-provided and may itself be wrong.
+    throw new Error("Token does not belong to the requested account (--who mismatch)");
   const path = writeSession(email, { accessToken, refreshToken: refreshToken ?? null });
   return { email, path, name: [me?.firstName, me?.lastName].filter(Boolean).join(" "), type: me?.type, refreshToken };
 }
@@ -159,35 +173,49 @@ export function writeSession(email, tokens) {
     if (typeof process.getuid === "function" && configStat.uid !== process.getuid())
       throw new Error("Refusing to store a session in a config directory owned by another user");
     fchmodSync(dirFd, 0o700);
+
+    // Node's fs has no dirfd-relative open/rename (no openat/renameat), so the
+    // write below still does a fresh pathname lookup — a genuine gap where a
+    // writable ancestor lets another local user swap the directory entry
+    // between the check above and the write. Keep the verified descriptor
+    // open (rather than closing it here) so we can re-identify the same
+    // directory afterward: if the path no longer resolves to the inode we
+    // just verified, the write may have landed somewhere else, and we discard
+    // it rather than report success.
+    const p = sessionPath(email);
+    const tmp = join(DRIVER_CONFIG_DIR, `.session-${randomUUID()}.tmp`);
+    let fd;
+    try {
+      fd = openSync(
+        tmp,
+        constants.O_WRONLY |
+          constants.O_CREAT |
+          constants.O_EXCL |
+          (constants.O_NOFOLLOW ?? 0),
+        0o600
+      );
+      writeFileSync(
+        fd,
+        JSON.stringify({ email, ...tokens, savedAt: new Date().toISOString() }, null, 2)
+      );
+      closeSync(fd);
+      fd = undefined;
+      // Atomic replacement changes the directory entry itself; an existing
+      // session-path symlink is replaced, never followed to its target.
+      renameSync(tmp, p);
+      const afterStat = lstatSync(DRIVER_CONFIG_DIR);
+      if (afterStat.dev !== configStat.dev || afterStat.ino !== configStat.ino) {
+        unlinkSync(p);
+        throw new Error("Refusing to trust a session write: config directory changed mid-write");
+      }
+    } finally {
+      if (fd !== undefined) closeSync(fd);
+      if (existsSync(tmp)) unlinkSync(tmp);
+    }
+    return p;
   } finally {
     closeSync(dirFd);
   }
-  const p = sessionPath(email);
-  const tmp = join(DRIVER_CONFIG_DIR, `.session-${randomUUID()}.tmp`);
-  let fd;
-  try {
-    fd = openSync(
-      tmp,
-      constants.O_WRONLY |
-        constants.O_CREAT |
-        constants.O_EXCL |
-        (constants.O_NOFOLLOW ?? 0),
-      0o600
-    );
-    writeFileSync(
-      fd,
-      JSON.stringify({ email, ...tokens, savedAt: new Date().toISOString() }, null, 2)
-    );
-    closeSync(fd);
-    fd = undefined;
-    // Atomic replacement changes the directory entry itself; an existing
-    // session-path symlink is replaced, never followed to its target.
-    renameSync(tmp, p);
-  } finally {
-    if (fd !== undefined) closeSync(fd);
-    if (existsSync(tmp)) unlinkSync(tmp);
-  }
-  return p;
 }
 
 /** Cheap server-side check that an access token is still good. */

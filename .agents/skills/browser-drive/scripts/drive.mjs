@@ -167,7 +167,14 @@ try {
         if (fromPath) {
           const raw = readPrivateTokenFile(fromPath);
           shredAfterRead = has("shred");
-          tokens = JSON.parse(raw);
+          try {
+            tokens = JSON.parse(raw);
+          } catch {
+            // JSON.parse's SyntaxError embeds an excerpt of the raw input —
+            // e.g. a pasted JWT — verbatim in its message. Never let that
+            // reach the outer catch's console.error(err.message).
+            throw new Error("Token import file is not valid JSON");
+          }
           if (tokens.state) tokens = tokens.state; // accept a raw auth-store blob
         } else if (process.env.SUPACLASS_ACCESS_TOKEN) {
           tokens = {

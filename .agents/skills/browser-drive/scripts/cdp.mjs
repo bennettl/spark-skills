@@ -55,6 +55,7 @@ export class Browser {
     this.ownsProfile = profileDir === null;
     this.msgId = 0;
     this.pending = new Map();
+    this._handlerError = null;
     this.events = [];
     this.inflightRequests = new Set();
     this.networkLastActivity = Date.now();
@@ -248,7 +249,23 @@ export class Browser {
           // Copy before dispatch: a handler may unsubscribe itself, and
           // splicing the live array mid-forEach silently skips the next one.
           const h = this.handlers.get(msg.method);
-          if (h) [...h].forEach((fn) => fn(msg.params));
+          if (h)
+            [...h].forEach((fn) => {
+              // A recipe's event handler runs off this raw WebSocket message
+              // event, outside any awaited call the CLI's try/finally can see.
+              // A sync throw or a rejected promise here would otherwise become
+              // an uncaught exception / unhandled rejection that can kill the
+              // process before cleanup runs. Capture the first failure instead
+              // and surface it through send() so the next awaited driver
+              // operation rejects with it — ordinary control flow from there.
+              try {
+                Promise.resolve(fn(msg.params)).catch((err) => {
+                  if (!this._handlerError) this._handlerError = err;
+                });
+              } catch (err) {
+                if (!this._handlerError) this._handlerError = err;
+              }
+            });
         }
       };
     });
@@ -269,6 +286,11 @@ export class Browser {
   }
 
   send(method, params = {}) {
+    if (this._handlerError) {
+      const err = this._handlerError;
+      this._handlerError = null;
+      return Promise.reject(err);
+    }
     const id = ++this.msgId;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
