@@ -49,8 +49,17 @@ CLAUDE_TIER = {"🔴": "major", "🟡": "minor", "🟢": "minor"}
 SAME_FILE_LINE_WINDOW = 5
 
 
+GH_API_TIMEOUT_SECONDS = 30
+
+
 def gh_api(path):
-    out = subprocess.run(["gh", "api", path], capture_output=True, text=True, check=True)
+    try:
+        out = subprocess.run(["gh", "api", path], capture_output=True, text=True,
+                              check=True, timeout=GH_API_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        print(f"`gh api {path}` did not respond within {GH_API_TIMEOUT_SECONDS}s — "
+              "check network/auth and retry.", file=sys.stderr)
+        sys.exit(1)
     return json.loads(out.stdout)
 
 
@@ -133,6 +142,13 @@ def main():
 
     boundary_sha = pin_sha or max(parsed, key=lambda p: p["created_at"])["commit_id"]
     boundary_findings = [p for p in parsed if p["commit_id"] == boundary_sha]
+    if pin_sha and not boundary_findings:
+        known_shas = sorted({p["commit_id"] for p in parsed})
+        print(f"No comments found for commit {pin_sha!r} — this would silently print as "
+              f"'no major findings' otherwise. Did you mean one of: {known_shas}? "
+              "(gh's short SHAs won't match — pass the full 40-character commit_id.)",
+              file=sys.stderr)
+        sys.exit(1)
 
     print(f"# Multi-reviewer summary — {owner}/{repo}#{pr_number} @ {boundary_sha[:12]}\n")
 
