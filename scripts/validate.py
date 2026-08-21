@@ -12,6 +12,8 @@ import os
 import re
 import sys
 
+from _validation_common import Reporter
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AGENTS_SKILLS = os.path.join(ROOT, ".agents", "skills")
 CLAUDE_SKILLS = os.path.join(ROOT, ".claude", "skills")
@@ -27,16 +29,15 @@ STALE_ID_RE = re.compile(
 # Context-window literal only when token/context-adjacent, to avoid prose noise.
 CONTEXT_WINDOW_RE = re.compile(r"\b\d+k\b(?=[^\n]{0,20}(token|context))", re.IGNORECASE)
 
-errors = []
-warnings = []
+_reporter = Reporter()
 
 
 def fail(msg):
-    errors.append(msg)
+    _reporter.fail(msg)
 
 
 def warn(msg):
-    warnings.append(msg)
+    _reporter.warn(msg)
 
 
 def extract_frontmatter(text, path):
@@ -171,13 +172,7 @@ def main():
     for name in skills:
         check_skill(name)
 
-    for w in warnings:
-        print(f"WARN  {w}")
-    for e in errors:
-        print(f"FAIL  {e}")
-
-    print(f"\nChecked {len(skills)} skill(s): {len(errors)} error(s), {len(warnings)} warning(s).")
-    return 1 if errors else 0
+    return _reporter.report("WARN  ", "FAIL  ", f"Checked {len(skills)} skill(s)")
 
 
 if __name__ == "__main__":
