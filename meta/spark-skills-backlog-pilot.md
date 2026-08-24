@@ -5,6 +5,14 @@ judgment. It does not count toward the application-repository accuracy cohort in
 `reviewer-pilot.md` and cannot validate app-specific authorization, schema,
 contract, or cache rules.
 
+The recorded run below (PRs #6-9, initiated 2026-08-13) used Codex only,
+predating Claude's addition as a second standing automatic reviewer — its
+ledger rows should not be read as having tested multi-reviewer agreement. Any
+further round on this backlog should follow the multi-reviewer procedure in
+[`reviewer-pilot.md`](reviewer-pilot.md) and
+[`multi-reviewer-matching.md`](multi-reviewer-matching.md) instead of the
+single-reviewer steps below.
+
 ## What this tests
 
 - automatic and manual GitHub review delivery;
