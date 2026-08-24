@@ -1,6 +1,7 @@
 # Optional convenience wrapper. `just` is not required — every recipe is a
 # one-line `python3 scripts/*.py` you can run directly.
 #   validate         → check structure, frontmatter, line budget, symlinks, model currency
+#   audit            → check TRUTH: dead repo paths, expiring counts, ownership overlap
 #   validate-ledgers → check reviewer-pilot ledger structure, enums, and cross-references
 #   sync             → regenerate .claude/skills symlinks from .agents/skills
 #   install          → symlink skills into ~/.agents/skills and ~/.claude/skills (global)
@@ -8,6 +9,13 @@
 
 validate:
     python3 scripts/validate.py
+
+# Static half of the skills-audit skill. validate.py asks "well-formed?";
+# this asks "still true?". Run both before opening a PR.
+audit:
+    python3 scripts/audit.py
+
+check: validate audit
 
 validate-ledgers:
     python3 scripts/validate_reviewer_ledgers.py

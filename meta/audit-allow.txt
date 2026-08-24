@@ -1,0 +1,21 @@
+# Paths a skill cites on purpose that do not exist in the app repos.
+#
+# `scripts/audit.py` verifies that every app-repo path a skill names actually
+# exists — a dead path reads as verified, which is worse than silence. Some
+# citations are legitimately absent: a path on an unmerged branch used as a
+# worked example, or a naming-divergence illustration.
+#
+# Format: registry-relative citing file, `|`, absent app path, then `#` and the
+# reason. Entries are claim-scoped so one example cannot suppress the same path
+# in another skill. Review rather than accumulate them; when the citing text is
+# rewritten, delete its entry.
+
+.agents/skills/dual-repo-review/SKILL.md | src/process-insight/             # naming example; lands with spark-api#85
+.agents/skills/dual-repo-review/references/seam-inventory.md | src/process-insight/ # same example
+.agents/skills/dual-repo-review/references/seam-inventory.md | src/process-insight/enum.ts # same pair
+.agents/skills/dual-repo-review/SKILL.md | src/api/process-insights.ts      # FE example; lands with spark-web#73
+.agents/skills/dual-repo-review/references/seam-inventory.md | src/api/process-insights.ts # same example
+.agents/skills/dual-repo-review/SKILL.md | scripts/setup-queue.sh           # introduced by spark-api#85
+.agents/skills/dual-repo-review/references/deploy-ordering.md | scripts/setup-queue.sh # same example
+.agents/skills/skills-audit/SKILL.md | scripts/setup-queue.sh              # cited because absent on main
+.agents/skills/skills-audit/SKILL.md | docs/credit-reservation.md          # cited as a dead-path defect
