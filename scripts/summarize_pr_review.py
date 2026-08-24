@@ -7,6 +7,11 @@ Fetches live via `gh api` (stdlib + gh CLI only). Defaults to the most recent
 commit any configured reviewer has commented against; pass a commit SHA to
 pin an earlier boundary explicitly.
 
+Prints to stdout by default. Pass --post to post the summary as an actual PR
+comment instead — idempotently: a marker in the comment body identifies it on
+a re-run, so re-invoking updates the existing summary comment rather than
+piling up a new one every time.
+
 Two things this deliberately does NOT do, by design, not oversight:
 - Cross-file or cross-boundary matching (e.g. "reviewer A flagged this on an
   earlier commit and it's unfixed"). That requires either the persisted
@@ -22,7 +27,7 @@ Two things this deliberately does NOT do, by design, not oversight:
   gate actually needs (see reviewer-pilot.md), so nothing operationally
   load-bearing is lost.
 
-Usage: summarize_pr_review.py <owner> <repo> <pr_number> [commit_sha]
+Usage: summarize_pr_review.py <owner> <repo> <pr_number> [commit_sha] [--post]
 """
 import json
 import re
@@ -52,15 +57,49 @@ SAME_FILE_LINE_WINDOW = 5
 GH_API_TIMEOUT_SECONDS = 30
 
 
-def gh_api(path):
+COMMENT_MARKER = "<!-- summarize-pr-review:auto-generated -->"
+
+
+def run_gh(args):
+    """Bounded `gh` invocation. Raises on failure/timeout rather than hanging —
+    same discipline for write calls as the read path below."""
     try:
-        out = subprocess.run(["gh", "api", path], capture_output=True, text=True,
-                              check=True, timeout=GH_API_TIMEOUT_SECONDS)
+        return subprocess.run(["gh", *args], capture_output=True, text=True,
+                               check=True, timeout=GH_API_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
-        print(f"`gh api {path}` did not respond within {GH_API_TIMEOUT_SECONDS}s — "
+        print(f"`gh {' '.join(args)}` did not respond within {GH_API_TIMEOUT_SECONDS}s — "
               "check network/auth and retry.", file=sys.stderr)
         sys.exit(1)
-    return json.loads(out.stdout)
+    except subprocess.CalledProcessError as e:
+        print(f"`gh {' '.join(args)}` failed: {e.stderr}", file=sys.stderr)
+        sys.exit(1)
+
+
+def gh_api(path):
+    """Fetches ALL pages of a list-returning endpoint, not just the first 30
+    (gh api's default page size). Both current callers (PR review comments,
+    PR issue comments) can legitimately exceed that on an active PR — verified
+    against spark-api PR #94, which silently truncated 107 comments to 30
+    before this fix. --slurp wraps each page as its own array element rather
+    than flattening, hence the explicit flatten below."""
+    pages = json.loads(run_gh(["api", path, "--paginate", "--slurp"]).stdout)
+    return [item for page in pages for item in page]
+
+
+def post_summary(owner, repo, pr_number, body):
+    """Idempotent: update the existing summary comment (identified by
+    COMMENT_MARKER) on a re-run instead of posting a new one every time."""
+    full_body = f"{COMMENT_MARKER}\n{body}"
+    existing = gh_api(f"repos/{owner}/{repo}/issues/{pr_number}/comments")
+    marked = [c["id"] for c in existing if COMMENT_MARKER in c["body"]]
+    if marked:
+        run_gh(["api", "-X", "PATCH", f"repos/{owner}/{repo}/issues/comments/{marked[0]}",
+                "-f", f"body={full_body}"])
+        print(f"Updated existing summary comment (id {marked[0]}).", file=sys.stderr)
+    else:
+        run_gh(["api", f"repos/{owner}/{repo}/issues/{pr_number}/comments",
+                "-f", f"body={full_body}"])
+        print("Posted new summary comment.", file=sys.stderr)
 
 
 def parse_codex(body):
@@ -109,11 +148,14 @@ def cluster_same_file(findings):
 
 
 def main():
-    if len(sys.argv) < 4:
+    args = sys.argv[1:]
+    post = "--post" in args
+    positional = [a for a in args if a != "--post"]
+    if len(positional) < 3:
         print(__doc__)
         sys.exit(1)
-    owner, repo, pr_number = sys.argv[1], sys.argv[2], sys.argv[3]
-    pin_sha = sys.argv[4] if len(sys.argv) > 4 else None
+    owner, repo, pr_number = positional[0], positional[1], positional[2]
+    pin_sha = positional[3] if len(positional) > 3 else None
 
     raw_comments = gh_api(f"repos/{owner}/{repo}/pulls/{pr_number}/comments")
 
@@ -150,10 +192,10 @@ def main():
               file=sys.stderr)
         sys.exit(1)
 
-    print(f"# Multi-reviewer summary — {owner}/{repo}#{pr_number} @ {boundary_sha[:12]}\n")
+    out = [f"# Multi-reviewer summary — {owner}/{repo}#{pr_number} @ {boundary_sha[:12]}\n"]
 
     reviewers_present = sorted({f["reviewer_tool"] for f in boundary_findings})
-    print(f"Reviewers on this commit: {', '.join(reviewers_present)}\n")
+    out.append(f"Reviewers on this commit: {', '.join(reviewers_present)}\n")
 
     clusters = cluster_same_file(boundary_findings)
     clusters.sort(key=lambda cl: (cl[0]["path"], cl[0]["line"] or -1))
@@ -175,36 +217,42 @@ def main():
         agreement = "corroborated (auto-matched, same file)" if len(reviewers_in_cluster) > 1 else "unique"
         path = cluster[0]["path"]
         lines = ",".join(str(m["line"]) for m in cluster if m["line"] is not None)
-        print(f"### {path}:{lines} — {tier} ({agreement})")
+        out.append(f"### {path}:{lines} — {tier} ({agreement})")
         for m in cluster:
-            print(f"- **{m['reviewer_tool']}** ({m['raw_severity']}): "
-                  f"{(m['title'] or m['summary'])[:160]}")
+            out.append(f"- **{m['reviewer_tool']}** ({m['raw_severity']}): "
+                       f"{(m['title'] or m['summary'])[:160]}")
         others_in_file = [
             c for c in clusters_by_path[path]
             if c is not cluster and not set(reviewers_in_cluster) & {m["reviewer_tool"] for m in c}
         ]
         for other in others_in_file:
             other_lines = ",".join(str(m["line"]) for m in other if m["line"] is not None)
-            print(f"  ⚠ possibly related — {sorted({m['reviewer_tool'] for m in other})[0]} also "
-                  f"flagged this file at line(s) {other_lines}; too far apart to auto-merge, "
-                  f"not confirmed as the same defect")
-        print()
+            out.append(f"  ⚠ possibly related — {sorted({m['reviewer_tool'] for m in other})[0]} also "
+                       f"flagged this file at line(s) {other_lines}; too far apart to auto-merge, "
+                       f"not confirmed as the same defect")
+        out.append("")
 
     if unparsed:
-        print(f"({len(unparsed)} comment(s) from configured reviewers didn't match a known "
-              f"format — not included above; check manually: "
-              f"{', '.join(f'{t}#{i}' for t, i in unparsed)})\n")
+        out.append(f"({len(unparsed)} comment(s) from configured reviewers didn't match a known "
+                   f"format — not included above; check manually: "
+                   f"{', '.join(f'{t}#{i}' for t, i in unparsed)})\n")
 
-    print("---")
+    out.append("---")
     if any_major:
-        print("**At least one major (P0/P1-tier) finding present — needs human confirmation "
-              "before this can be `agent-clear`.**")
+        out.append("**At least one major (P0/P1-tier) finding present — needs human confirmation "
+                   "before this can be `agent-clear`.**")
     else:
-        print("No major-tier findings from configured reviewers on this commit. This is *not* "
-              "a PR-level `agent-clear` determination — that stays a separate, manual judgment "
-              "per AGENTS.md's merge-readiness checklist (see multi-reviewer-matching.md #10).")
-    print("Cross-file and cross-boundary matches are not auto-detected by this script — if a "
-          "finding here looks related to something flagged on an earlier commit, confirm by hand.")
+        out.append("No major-tier findings from configured reviewers on this commit. This is *not* "
+                   "a PR-level `agent-clear` determination — that stays a separate, manual judgment "
+                   "per AGENTS.md's merge-readiness checklist (see multi-reviewer-matching.md #10).")
+    out.append("Cross-file and cross-boundary matches are not auto-detected by this script — if a "
+               "finding here looks related to something flagged on an earlier commit, confirm by hand.")
+
+    summary = "\n".join(out)
+    if post:
+        post_summary(owner, repo, pr_number, summary)
+    else:
+        print(summary)
 
 
 if __name__ == "__main__":
