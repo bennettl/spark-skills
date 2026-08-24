@@ -30,3 +30,6 @@ jobs:
 
       - name: Validate skills registry
         run: python3 scripts/validate.py
+
+      - name: Validate reviewer-pilot ledgers
+        run: python3 scripts/validate_reviewer_ledgers.py

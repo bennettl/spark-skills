@@ -88,12 +88,23 @@ the `Registry` check.
 
 ### Merge-readiness disposition
 
-- A clean Codex review is necessary but not sufficient for `agent-clear`. That
-  disposition also requires the current boundary, a conflict-free PR, passing
-  `Registry`, satisfied stack/dependency order, and no unresolved P0/P1 finding.
-- Use `blocker` for a confirmed P0/P1 defect. Use `human-review` when the review
-  is stale/incomplete or the change touches credentials/session handling,
-  browser/process/filesystem control, distribution/install behavior, CI/reviewer
-  policy, or another judgment-heavy trust boundary.
-- Codex is advisory during the pilot. It must not approve, merge, deploy, or use
-  `@codex fix`. Bennett or another designated human retains merge authority.
+- A clean review from every configured automatic reviewer (currently Codex and
+  Claude) is necessary but not sufficient for `agent-clear`. That disposition
+  also requires the current boundary for each reviewer, a conflict-free PR,
+  passing `Registry`, satisfied stack/dependency order, and no unresolved P0/P1
+  finding from any reviewer.
+- Use `blocker` only for a confirmed P0/P1 defect from an automatic reviewer,
+  matching `reviewer-pilot.md`'s taxonomy. A purely human-caught P0/P1 (no
+  automatic reviewer ever flagged it) is not `blocker` — it stays `agent-clear`
+  with the finding adjudicated `missed_issue`, which is what miss-rate and the
+  "no `agent-clear` contains a human-found P0/P1" success gate exist to catch;
+  see `multi-reviewer-matching.md` for why. Use `human-review` when a review is
+  stale/incomplete, unavailable
+  (including a reviewer at its capacity limit), or the change touches
+  credentials/session handling, browser/process/filesystem control,
+  distribution/install behavior, CI/reviewer policy, or another judgment-heavy
+  trust boundary.
+- Every automatic reviewer is advisory during the pilot. None may approve,
+  merge, deploy, or use a write/auto-fix capability — Codex's is invoked by
+  commenting `"@codex address that feedback"`; no Claude-equivalent currently
+  exists. Bennett or another designated human retains merge authority.

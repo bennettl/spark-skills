@@ -1,10 +1,11 @@
 # Optional convenience wrapper. `just` is not required — every recipe is a
 # one-line `python3 scripts/*.py` you can run directly.
-#   validate → check structure, frontmatter, line budget, symlinks, model currency
-#   audit    → check TRUTH: dead repo paths, expiring counts, ownership overlap
-#   sync     → regenerate .claude/skills symlinks from .agents/skills
-#   install  → symlink skills into ~/.agents/skills and ~/.claude/skills (global)
-#   new      → scaffold a new skill directory
+#   validate         → check structure, frontmatter, line budget, symlinks, model currency
+#   audit            → check TRUTH: dead repo paths, expiring counts, ownership overlap
+#   validate-ledgers → check reviewer-pilot ledger structure, enums, and cross-references
+#   sync             → regenerate .claude/skills symlinks from .agents/skills
+#   install          → symlink skills into ~/.agents/skills and ~/.claude/skills (global)
+#   new              → scaffold a new skill directory
 
 validate:
     python3 scripts/validate.py
@@ -15,6 +16,9 @@ audit:
     python3 scripts/audit.py
 
 check: validate audit
+
+validate-ledgers:
+    python3 scripts/validate_reviewer_ledgers.py
 
 sync:
     python3 scripts/sync-skills.py
