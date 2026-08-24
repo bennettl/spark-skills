@@ -4,13 +4,13 @@ description: >-
   Pre-PR self-review gate for the Supaclass app repos (spark-api, spark-web).
   It complements build CI and human review. Reviews the working diff against
   the actual pull-request base, requires human review when that base is unknown,
-  auto-detects the repo, and loads its AGENTS.md review rules. Checks spark-api
-  DTO validation, synchronize:true schema risk, response envelopes, entity
-  exposure, secrets, and route guards; checks spark-web endpoint/query-key use,
-  cache invalidation, mutation errors, query gating, and Mantine conventions.
-  Contract changes hand off to api-contract-check. Emits file:line findings with
-  severity and a merge, do-not-merge, or incomplete/human-review verdict; it
-  does not rewrite.
+  accepts an explicit repo root, auto-detects the target, and loads its AGENTS.md
+  review rules. Checks spark-api DTO validation, schema risk, envelopes, entity
+  exposure, secrets, and guards; checks spark-web endpoint/query-key use, cache
+  invalidation, mutation errors, query gating, and Mantine conventions. Contract
+  changes hand off to api-contract-check. Emits file:line findings with severity
+  and a merge, do-not-merge, or incomplete/human-review verdict; it does not
+  rewrite.
 metadata:
   supaclass-repos: [spark-api, spark-web]
   maturity: vertical-slice
@@ -47,8 +47,20 @@ cross-repository failure modes checked here.
   Compute the merge base between the established base and `HEAD`, then inspect
   the three-dot committed diff plus `git status` and relevant uncommitted
   hunks.
-- **The repo.** Auto-detect which repo you're in (see Method 2) and load its
-  rule set. The `references/*-checks.md` files in this skill are the **source of
+- **The repo.** Default to auto-detecting which repo you're in (see Method 2) and
+  load its rule set. **Accept an explicit repo root if the caller names one** —
+  e.g. `../spark-api` — and detect against *that* root rather than the working
+  directory, matching `api-contract-check`'s input contract. This is what lets an
+  orchestrator (`dual-repo-review`) invoke this skill per repo without changing
+  the session's working directory; without it, a call from a third directory
+  detects "neither" and degrades to stack-neutral checks only. The
+  target root is also the execution root for **every** repository read and Git
+  operation: use `git -C <repo-root> ...` (or change into the verified root)
+  for `rev-parse`, merge-base, diff, status, file enumeration, and file reads.
+  If the root is not a Git worktree or operations cannot be rooted there, return
+  **incomplete / human-review required** rather than inspecting the caller's
+  repository by accident. The
+  `references/*-checks.md` files in this skill are the **source of
   truth** for the checklists; the repo's `AGENTS.md` "Code Review Rules" +
   "Non-obvious rules" are the confirmatory, possibly-newer overlay. Read
   `AGENTS.md` when present and let it override; **degrade gracefully** when it's
@@ -58,13 +70,17 @@ cross-repository failure modes checked here.
 
 ## Method
 
-1. **Get the diff.** Resolve the actual PR base ref/SHA as described above,
+1. **Get the diff.** First establish and verify the target repo root. Root every
+   Git command and source read there; an explicit target must never inherit the
+   caller's `HEAD`, status, or working tree. Resolve the actual PR base ref/SHA,
    compute its merge base with `HEAD`, and collect the changed file list + hunks
    (committed and uncommitted). Group by area (controller, entity, dto, api
    module, component, …) so checks map cleanly. State the exact base and head in
    the report. An unknown or moving base is not clearance.
 
-2. **Detect the repo** from files at the root, not from the directory name:
+2. **Detect the repo** from files at the root of the target — the explicit repo
+   root if the caller named one, otherwise the working directory — not from the
+   directory name:
    - **spark-api** — `nest-cli.json`, `@nestjs/core` in `package.json`, and the
      `src/<feature>/{controller,service,entity,dto}` module layout.
    - **spark-web** — `vite.config.ts` + `src/api/const.ts`, `react` + `@mantine/*`
