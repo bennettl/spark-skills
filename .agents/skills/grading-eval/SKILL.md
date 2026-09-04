@@ -7,15 +7,13 @@ description: >-
   grading strategies or consensus logic under src/grading, SubmissionConverter
   scoring, the model registry in llm.const.ts, page rendering or orientation in
   spark-serverless, or a proposal to change a default grading seat. Also use it
-  when someone asks "does this model / prompt read bubble sheets better", "does
-  read-first help on handwritten derivations", "what is our grading accuracy",
-  or "is this change safe for Nathan's exams". Two harnesses: evals/mc-sheets
-  (objective items, 124 sheets with golden letters) and evals/written-response
-  (free-response and mixed papers, 252 papers, instructor-verified points as
-  they arrive). It restores the datasets from S3 if needed, runs the variants
-  the diff affects, compares them to the production baseline and the current
-  best seats, and reports accuracy, invariants and item-level detail for every
-  regression. It measures; it does not decide the merge.
+  for "does this model or prompt read bubble sheets better", "does read-first
+  help on handwritten work", or "is this change safe for Nathan's exams". Two
+  harnesses: evals/mc-sheets (124 answer sheets, golden letters) and
+  evals/written-response (252 mixed papers, instructor-verified points). It
+  restores the datasets from S3, runs the variants the diff affects, compares
+  them to the production baseline and best seats, and reports accuracy,
+  invariants and item-level regressions. It measures; it does not decide.
 metadata:
   supaclass-repos: [spark-api, spark-serverless]
   maturity: vertical-slice
